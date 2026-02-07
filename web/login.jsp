@@ -237,7 +237,7 @@ body{
 
     function setStaffMode(){
         label.textContent = "Staff ID";
-        userId.placeholder = "e.g. S001";
+        userId.placeholder = "e.g. STF001";
         userId.value = "";
         userId.removeAttribute("pattern");
         userId.removeAttribute("title");

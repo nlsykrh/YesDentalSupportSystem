@@ -34,26 +34,36 @@ public class StaffDAO implements BaseDAO<Staff> {
     }
     
     public boolean updateStaff(Staff staff) {
-        String sql = "UPDATE staff SET " +
-                     "staff_name = ?, staff_email = ?, staff_phonenum = ?, " +
-                     "staff_role = ?, staff_password = ? " +
-                     "WHERE staff_id = ?";
+        boolean hasPassword = staff.getStaffPassword() != null && !staff.getStaffPassword().trim().isEmpty();
+
+        String sql;
+        if (hasPassword) {
+            sql = "UPDATE staff SET staff_name=?, staff_email=?, staff_phonenum=?, staff_role=?, staff_password=? WHERE staff_id=?";
+        } else {
+            sql = "UPDATE staff SET staff_name=?, staff_email=?, staff_phonenum=?, staff_role=? WHERE staff_id=?";
+        }
 
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
 
-            ps.setString(1, staff.getStaffName());
-            ps.setString(2, staff.getStaffEmail());
-            ps.setString(3, staff.getStaffPhonenum());
-            ps.setString(4, staff.getStaffRole());
-            ps.setString(5, staff.getStaffPassword());
-            ps.setString(6, staff.getStaffId());
+            int i = 1;
+            ps.setString(i++, staff.getStaffName());
+            ps.setString(i++, staff.getStaffEmail());
+            ps.setString(i++, staff.getStaffPhonenum());
+            ps.setString(i++, staff.getStaffRole());
+
+            if (hasPassword) {
+                ps.setString(i++, staff.getStaffPassword().trim());
+            }
+
+            ps.setString(i++, staff.getStaffId());
 
             return ps.executeUpdate() > 0;
 
         } catch (SQLException e) {
             e.printStackTrace();
         }
+
         return false;
     }
     

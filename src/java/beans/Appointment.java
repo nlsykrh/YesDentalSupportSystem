@@ -9,17 +9,19 @@ public class Appointment {
     private String appointmentStatus; // pending, confirmed, cancelled
     private String remarks;
     private String patientIc;
+    private String staffId;
     
     public Appointment() {}
 
     public Appointment(String appointmentId, Date appointmentDate, String appointmentTime,
-                      String appointmentStatus, String remarks, String patientIc) {
+                      String appointmentStatus, String remarks, String patientIc, String staffId) {
         this.appointmentId = appointmentId;
         this.appointmentDate = appointmentDate;
         this.appointmentTime = appointmentTime;
         this.appointmentStatus = appointmentStatus;
         this.remarks = remarks;
         this.patientIc = patientIc;
+        this.staffId = staffId;
     }
 
     // Getters and Setters
@@ -40,4 +42,7 @@ public class Appointment {
     
     public String getPatientIc() { return patientIc; }
     public void setPatientIc(String patientIc) { this.patientIc = patientIc; }
+    
+    public String getStaffId() { return staffId; }
+    public void setStaffId(String staffId) { this.staffId = staffId; }
 }
