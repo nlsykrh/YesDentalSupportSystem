@@ -2,267 +2,216 @@ package controllers;
 
 import beans.Patient;
 import dao.PatientDAO;
+
 import java.io.IOException;
-import java.text.ParseException;
+import java.net.URLEncoder;
 import java.text.SimpleDateFormat;
 import java.util.Date;
-import java.util.List;
 import javax.servlet.RequestDispatcher;
 import javax.servlet.ServletException;
-import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-//@WebServlet("/PatientServlet")
 public class PatientServlet extends HttpServlet {
+
     private PatientDAO patientDAO;
     private SimpleDateFormat dateFormat;
-    
+
     @Override
     public void init() {
         patientDAO = new PatientDAO();
         dateFormat = new SimpleDateFormat("yyyy-MM-dd");
     }
-    
+
     @Override
-    protected void doPost(HttpServletRequest request, HttpServletResponse response) 
+    protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-        
-        request.setCharacterEncoding("UTF-8"); 
-        
-        String action = request.getParameter("action");
-        
-        if ("add".equals(action)) {
-            addPatient(request, response);
-        } else if ("update".equals(action)) {
-            updatePatient(request, response);
-        } else if ("delete".equals(action)) {
-            deletePatient(request, response);
-        } else if ("register".equals(action)) {
-            registerPatient(request, response);
-        }
-    }
-    
-    @Override
-    protected void doGet(HttpServletRequest request, HttpServletResponse response) 
-        throws ServletException, IOException {
 
         String action = request.getParameter("action");
+
+        if ("addForm".equals(action)) {
+            RequestDispatcher rd = request.getRequestDispatcher("/patient/addPatient.jsp");
+            rd.forward(request, response);
+            return;
+        }
+
+        if ("checkIc".equals(action)) {
+            checkIc(request, response);
+            return;
+        }
 
         if ("edit".equals(action)) {
             editPatient(request, response);
-        } else if ("view".equals(action)) {
+            return;
+        }
+
+        if ("view".equals(action)) {
             viewPatient(request, response);
-        } else {
-            // Default action: list patients
-            listPatients(request, response);
+            return;
         }
+
+        listPatients(request, response);
     }
-    
-    private void viewPatient(HttpServletRequest request, HttpServletResponse response)
-        throws ServletException, IOException {
-        
+
+    @Override
+    protected void doPost(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+
+        request.setCharacterEncoding("UTF-8");
+        String action = request.getParameter("action");
+
+        if ("add".equals(action)) {
+            addPatient(request, response);
+            return;
+        }
+
+        if ("update".equals(action)) {
+            updatePatient(request, response);
+            return;
+        }
+
+        if ("delete".equals(action)) {
+            deletePatient(request, response);
+            return;
+        }
+
+        response.sendRedirect(request.getContextPath() + "/PatientServlet?action=list");
+    }
+
+    private void checkIc(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+
         String patientIc = request.getParameter("patient_ic");
-        
-        if (patientIc == null || patientIc.trim().isEmpty()) {
-            request.setAttribute("error", "Patient IC is required for editing.");
-            listPatients(request, response);
-            return;
-        }
-        
-        Patient patient = patientDAO.getPatientByIc(patientIc);
-        
-        if (patient == null) {
-            request.setAttribute("error", "Patient not found with IC: " + patientIc);
-            listPatients(request, response);
-            return;
-        }
-        
-        request.setAttribute("patient", patient);
-        RequestDispatcher dispatcher = 
-            request.getRequestDispatcher("/patient/viewPatientDetails.jsp");
-        dispatcher.forward(request, response);
-    }
-    
-    private void editPatient(HttpServletRequest request, HttpServletResponse response)
-        throws ServletException, IOException {
-        
-        String patientIc = request.getParameter("patient_ic");
-        
-        if (patientIc == null || patientIc.trim().isEmpty()) {
-            request.setAttribute("error", "Patient IC is required for editing.");
-            listPatients(request, response);
-            return;
-        }
-        
-        Patient patient = patientDAO.getPatientByIc(patientIc);
-        
-        if (patient == null) {
-            request.setAttribute("error", "Patient not found with IC: " + patientIc);
-            listPatients(request, response);
-            return;
-        }
-        
-        request.setAttribute("patient", patient);
-        RequestDispatcher dispatcher = 
-            request.getRequestDispatcher("/patient/editPatient.jsp");
-        dispatcher.forward(request, response);
-    }
-    
-    private void listPatients(HttpServletRequest request, HttpServletResponse response)
-        throws ServletException, IOException {
-        
-        PatientDAO patientDAO = new PatientDAO();
-        List<Patient> patients = patientDAO.getAllPatients();
+        boolean exists = false;
 
-        System.out.println("DEBUG: Number of patients fetched: " + 
-            (patients != null ? patients.size() : "null"));
+        if (patientIc != null && !patientIc.trim().isEmpty()) {
+            Patient patient = patientDAO.getPatientByIc(patientIc.trim());
+            exists = (patient != null);
+        }
 
-        request.setAttribute("patients", patients);
-        RequestDispatcher dispatcher =
-                request.getRequestDispatcher("/patient/viewPatients.jsp");
-        dispatcher.forward(request, response);
+        response.setContentType("application/json;charset=UTF-8");
+        response.getWriter().write("{\"exists\":" + exists + "}");
     }
 
-    private void registerPatient(HttpServletRequest request, HttpServletResponse response)
-        throws ServletException, IOException {
-
-        try {
-            Patient patient = new Patient();
-
-            patient.setPatientName(request.getParameter("patient_name"));
-            patient.setPatientIc(request.getParameter("patient_ic"));
-            patient.setPatientPhone(request.getParameter("patient_phone"));
-            patient.setPatientEmail(request.getParameter("patient_email"));
-            patient.setPatientAddress(request.getParameter("patient_address"));
-            patient.setPatientGuardian(request.getParameter("patient_guardian"));
-            patient.setPatientGuardianPhone(request.getParameter("patient_guardian_phone"));
-
-            // DOB
-            patient.setPatientDob(
-                    new SimpleDateFormat("yyyy-MM-dd")
-                            .parse(request.getParameter("patient_dob"))
-            );
-
-            // ✅ PASSWORD = PHONE (AUTOMATIC)
-            patient.setPatientPassword(patient.getPatientPhone());
-
-            // Hidden fields
-            patient.setPatientStatus(request.getParameter("patient_status"));
-            patient.setPatientCrDate(new Date());
-
-            boolean success = patientDAO.addPatient(patient);
-
-            if (success) {
-                response.sendRedirect("login.jsp");
-            } else {
-                request.setAttribute("error", "Failed to add patient.");
-                request.getRequestDispatcher("addPatient.jsp").forward(request, response);
-            }
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            request.setAttribute("error", e.getMessage());
-            request.getRequestDispatcher("addPatient.jsp").forward(request, response);
-        }
-    }
-    
     private void addPatient(HttpServletRequest request, HttpServletResponse response)
         throws ServletException, IOException {
 
-        try {
-            Patient patient = new Patient();
+    try {
+        Patient patient = new Patient();
 
-            patient.setPatientName(request.getParameter("patient_name"));
-            patient.setPatientIc(request.getParameter("patient_ic"));
-            patient.setPatientPhone(request.getParameter("patient_phone"));
-            patient.setPatientEmail(request.getParameter("patient_email"));
-            patient.setPatientAddress(request.getParameter("patient_address"));
-            patient.setPatientGuardian(request.getParameter("patient_guardian"));
-            patient.setPatientGuardianPhone(request.getParameter("patient_guardian_phone"));
+        patient.setPatientName(request.getParameter("patient_name"));
+        patient.setPatientIc(request.getParameter("patient_ic"));
+        patient.setPatientPhone(request.getParameter("patient_phone"));
+        patient.setPatientEmail(request.getParameter("patient_email"));
+        patient.setPatientAddress(request.getParameter("patient_address"));
+        patient.setPatientGuardian(request.getParameter("patient_guardian"));
+        patient.setPatientGuardianPhone(request.getParameter("patient_guardian_phone"));
 
-            // DOB
-            patient.setPatientDob(
-                    new SimpleDateFormat("yyyy-MM-dd")
-                            .parse(request.getParameter("patient_dob"))
-            );
+        patient.setPatientDob(new SimpleDateFormat("yyyy-MM-dd")
+                .parse(request.getParameter("patient_dob")));
 
-            // ✅ PASSWORD = PHONE (AUTOMATIC)
-            patient.setPatientPassword(patient.getPatientPhone());
+        patient.setPatientPassword(patient.getPatientPhone());
+        patient.setPatientStatus("A");
+        patient.setPatientCrDate(new Date());
 
-            // Hidden fields
-            patient.setPatientStatus(request.getParameter("patient_status"));
-            patient.setPatientCrDate(new Date());
+        boolean success = patientDAO.addPatient(patient);
 
-            boolean success = patientDAO.addPatient(patient);
-
-            if (success) {
-                response.sendRedirect("/YesDentalSupportSystem/PatientServlet?action=list");
-            } else {
-                request.setAttribute("error", "Failed to add patient.");
-                request.getRequestDispatcher("addPatient.jsp").forward(request, response);
-            }
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            request.setAttribute("error", e.getMessage());
-            request.getRequestDispatcher("addPatient.jsp").forward(request, response);
-        }
-    }
-    
-    private void deletePatient(HttpServletRequest request, HttpServletResponse response) 
-        throws ServletException, IOException {
-    
-        String patientIc = request.getParameter("patient_ic");
-        boolean success = patientDAO.delete(patientIc);
-        
         if (success) {
-            request.setAttribute("message", "Patient deleted successfully!");
+            // ✅ redirect back to add form with popup param
+            response.sendRedirect(request.getContextPath() + "/PatientServlet?action=addForm&popup=added");
         } else {
-            request.setAttribute("error", "Failed to delete patient.");
+            request.setAttribute("error", "Failed to add patient.");
+            request.getRequestDispatcher("/patient/addPatient.jsp").forward(request, response);
         }
-        
-        listPatients(request, response);
-    }
-    
 
-    private void updatePatient(HttpServletRequest request, HttpServletResponse response)
+    } catch (Exception e) {
+        e.printStackTrace();
+        request.setAttribute("error", e.getMessage());
+        request.getRequestDispatcher("/patient/addPatient.jsp").forward(request, response);
+    }
+}
+
+
+private void updatePatient(HttpServletRequest request, HttpServletResponse response)
         throws ServletException, IOException {
 
-        try {
-            Patient patient = new Patient();
+    try {
+        String patientIc = request.getParameter("patient_ic");
+        Patient existing = patientDAO.getPatientByIc(patientIc);
 
-            patient.setPatientIc(request.getParameter("patient_ic"));
-            patient.setPatientName(request.getParameter("patient_name"));
-            patient.setPatientPhone(request.getParameter("patient_phone"));
-            patient.setPatientEmail(request.getParameter("patient_email"));
-            patient.setPatientAddress(request.getParameter("patient_address"));
-            patient.setPatientGuardian(request.getParameter("patient_guardian"));
-            patient.setPatientGuardianPhone(request.getParameter("patient_guardian_phone"));
-            patient.setPatientStatus(request.getParameter("patient_status"));
+        if (existing == null) {
+            request.setAttribute("error", "Patient not found.");
+            listPatients(request, response);
+            return;
+        }
 
-            patient.setPatientDob(
-                    new SimpleDateFormat("yyyy-MM-dd")
-                            .parse(request.getParameter("patient_dob"))
-            );
+        Patient patient = new Patient();
+        patient.setPatientIc(patientIc);
+        patient.setPatientName(request.getParameter("patient_name"));
+        patient.setPatientPhone(request.getParameter("patient_phone"));
+        patient.setPatientEmail(request.getParameter("patient_email"));
+        patient.setPatientAddress(request.getParameter("patient_address"));
+        patient.setPatientGuardian(request.getParameter("patient_guardian"));
+        patient.setPatientGuardianPhone(request.getParameter("patient_guardian_phone"));
+        patient.setPatientStatus(request.getParameter("patient_status"));
 
-            boolean success = patientDAO.updatePatient(patient);
+        patient.setPatientDob(new SimpleDateFormat("yyyy-MM-dd")
+                .parse(request.getParameter("patient_dob")));
 
-            if (success) {
-                request.setAttribute("message", "Patient updated successfully!");
-            } else {
-                request.setAttribute("error", "Update failed. Please try again.");
-            }
+        String newPassword = request.getParameter("patient_password");
+        if (newPassword != null && !newPassword.trim().isEmpty()) {
+            patient.setPatientPassword(newPassword.trim());
+        } else {
+            patient.setPatientPassword(existing.getPatientPassword());
+        }
 
-            // Redirect to view patients after update
-            response.sendRedirect("PatientServlet");
+        boolean success = patientDAO.updatePatient(patient);
 
-        } catch (Exception e) {
-            e.printStackTrace();
-            request.setAttribute("error", "Invalid data: " + e.getMessage());
-            // Forward back to edit page with error
+        if (success) {
+            // ✅ redirect back to edit page with popup param
+            response.sendRedirect(request.getContextPath()
+                    + "/PatientServlet?action=edit&patient_ic="
+                    + java.net.URLEncoder.encode(patientIc, "UTF-8")
+                    + "&popup=updated");
+        } else {
+            request.setAttribute("error", "Update failed. Please try again.");
+            request.setAttribute("patient", existing);
             request.getRequestDispatcher("/patient/editPatient.jsp").forward(request, response);
         }
+
+    } catch (Exception e) {
+        e.printStackTrace();
+        request.setAttribute("error", "Invalid data: " + e.getMessage());
+        request.getRequestDispatcher("/patient/editPatient.jsp").forward(request, response);
+    }
+}
+
+    // Your existing methods (edit/view/list) — keep as you already have:
+    private void editPatient(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+
+        String patientIc = request.getParameter("patient_ic");
+        Patient patient = patientDAO.getPatientByIc(patientIc);
+
+        request.setAttribute("patient", patient);
+        request.getRequestDispatcher("/patient/editPatient.jsp").forward(request, response);
+    }
+
+    private void viewPatient(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+
+        String patientIc = request.getParameter("patient_ic");
+        Patient patient = patientDAO.getPatientByIc(patientIc);
+
+        request.setAttribute("patient", patient);
+        request.getRequestDispatcher("/patient/viewPatientDetails.jsp").forward(request, response);
+    }
+
+    private void listPatients(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+
+        request.setAttribute("patients", patientDAO.getAllPatients());
+        request.getRequestDispatcher("/patient/viewPatients.jsp").forward(request, response);
     }
 }
