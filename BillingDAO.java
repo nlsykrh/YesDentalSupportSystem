@@ -245,10 +245,11 @@ public class BillingDAO {
     public List<Billing> getAllBillings() {
     List<Billing> billings = new ArrayList<>();
     
-    // CORRECTED SQL - removed \n and ensured proper column names
-    String sql = "SELECT b.*, a.appointment_date, a.patient_ic, a.appointment_status " +
+    // UPDATED SQL - added JOIN with patient table and patient_name column
+    String sql = "SELECT b.*, a.appointment_date, a.patient_ic, a.appointment_status, p.patient_name " +
                 "FROM billing b " +
-                "JOIN appointment a ON b.appointment_id = a.appointment_id " +
+                "LEFT JOIN appointment a ON b.appointment_id = a.appointment_id " +
+                "LEFT JOIN patient p ON p.patient_ic = a.patient_ic " +
                 "WHERE a.appointment_status = 'Confirmed' " +
                 "ORDER BY b.billing_duedate DESC";
     
@@ -264,6 +265,7 @@ public class BillingDAO {
             billing.setBillingStatus(rs.getString("billing_status"));
             billing.setBillingMethod(rs.getString("billing_method"));
             billing.setAppointmentId(rs.getString("appointment_id"));
+            billing.setPatientName(rs.getString("patient_name"));
             billings.add(billing);
         }
     } catch (SQLException e) {

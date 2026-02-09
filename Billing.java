@@ -10,17 +10,19 @@ public class Billing {
     private String billingStatus; // Pending, Paid
     private String billingMethod; // Pay at Counter, Installment
     private String appointmentId;
+    private String patientName;
     
     public Billing() {}
 
     public Billing(String billingId, BigDecimal billingAmount, Date billingDuedate,
-                  String billingStatus, String billingMethod, String appointmentId) {
+                  String billingStatus, String billingMethod, String appointmentId, String patientName) {
         this.billingId = billingId;
         this.billingAmount = billingAmount;
         this.billingDuedate = billingDuedate;
         this.billingStatus = billingStatus;
         this.billingMethod = billingMethod;
         this.appointmentId = appointmentId;
+        this.patientName = patientName;
     }
 
     // Getters and Setters
@@ -41,4 +43,7 @@ public class Billing {
     
     public String getAppointmentId() { return appointmentId; }
     public void setAppointmentId(String appointmentId) { this.appointmentId = appointmentId; }
+    
+    public String getPatientName() { return patientName; }
+    public void setPatientName(String patientName) { this.patientName = patientName; }
 }
