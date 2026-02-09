@@ -45,12 +45,12 @@ public class PatientDAO implements BaseDAO<Patient> {
         return false;
     }
         
-    public boolean updatePatient(Patient patient) {
+public boolean updatePatient(Patient patient) {
 
     String sql = "UPDATE patient SET " +
             "patient_name = ?, patient_phone = ?, patient_email = ?, " +
             "patient_dob = ?, patient_address = ?, patient_guardian = ?, " +
-            "patient_guardian_phone = ?, patient_status = ? " +
+            "patient_guardian_phone = ?, patient_status = ?, patient_password = ? " +
             "WHERE patient_ic = ?";
 
     try (Connection conn = DBConnection.getConnection();
@@ -64,7 +64,8 @@ public class PatientDAO implements BaseDAO<Patient> {
         ps.setString(6, patient.getPatientGuardian());
         ps.setString(7, patient.getPatientGuardianPhone());
         ps.setString(8, patient.getPatientStatus());
-        ps.setString(9, patient.getPatientIc()); // ✅ WHERE
+        ps.setString(9, patient.getPatientPassword());
+        ps.setString(10, patient.getPatientIc());
 
         return ps.executeUpdate() > 0;
 
