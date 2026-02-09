@@ -17,7 +17,7 @@
             height: 100vh;
             overflow: hidden;
             font-family: Arial, sans-serif;
-            background: url("YesDentalPic/Background.png") no-repeat center center fixed;
+            background: url("<%=request.getContextPath()%>/images/Background.png") no-repeat center center fixed;
             background-size: cover;
         }
 
@@ -51,6 +51,12 @@
             font-family: "Times New Roman", serif;
         }
 
+        .top-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
         .user-chip {
             display: inline-flex;
             align-items: center;
@@ -60,6 +66,27 @@
             border-radius: 18px;
             font-size: 13px;
             color: #2f3a34;
+        }
+
+        .logout-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 16px;
+            border-radius: 999px;
+            background: #c96a6a;
+            color: #fff;
+            font-size: 13px;
+            font-weight: 600;
+            text-decoration: none;
+            box-shadow: 0 6px 14px rgba(0,0,0,0.18);
+            transition: all .2s ease;
+            border: none;
+        }
+
+        .logout-btn:hover {
+            background: #b95a5a;
+            transform: translateY(-1px);
         }
 
         /* Notification Styles */
@@ -180,18 +207,24 @@
         }
 
         .side-link {
-            display: block;
-            color: white;
-            padding: 7px 10px;
-            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #fff;
+            padding: 9px 10px;
+            border-radius: 10px;
             text-decoration: none;
             font-size: 14px;
             margin-bottom: 6px;
         }
-
-        .side-link.active,
-        .side-link:hover {
-            background: rgba(255, 255, 255, 0.14);
+        .side-link i {
+            width: 18px;
+            text-align: center;
+            opacity: 0.95;
+        }
+        .side-link:hover,
+        .side-link.active {
+            background: rgba(255,255,255,0.14);
             color: #ffe69b;
         }
 
@@ -206,17 +239,27 @@
             overflow: hidden;
         }
 
-        .page-title {
-            color: #000;
-            font-size: 24px;
-            font-weight: bold;
-            margin-bottom: 15px;
-            text-align: left;
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 12px;
+            align-items: center;
+        }
+
+        .panel-header h4 {
+            margin: 0;
+            font-weight: 700;
+            color: #2f2f2f;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
 
         .controls-row {
             display: flex;
             align-items: center;
+            justify-content: space-between;
             gap: 15px;
             margin-bottom: 20px;
         }
@@ -230,7 +273,7 @@
         .search-input {
             width: 100%;
             padding: 10px 15px 10px 15px;
-            border: 1px solid #e0e0e0;
+            border: 1px solid #d7ddd9;
             border-radius: 30px;
             font-size: 14px;
             outline: none;
@@ -246,11 +289,14 @@
             background-color: #e9f0d5;
             color: #2f4f2f;
             border: 1px solid #dce8c0;
-            padding: 10px 25px;
-            border-radius: 30px;
-            font-weight: 600;
+            padding: 8px 16px;
+            border-radius: 18px;
+            font-weight: 700;
+            font-size: 13px;
             text-decoration: none;
-            display: inline-block;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
             transition: background 0.3s;
             white-space: nowrap;
         }
@@ -265,56 +311,59 @@
             font-weight: 600; 
             color: #198754; 
         }
-        
-        .btn-edit {
-            background: #ffd54f;
-            color: #856404;
-            border: none;
-            padding: 8px 12px;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            font-size: 16px;
+
+        /* Updated Actions Styles to match the earlier code */
+        .actions {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        .action-pill {
             display: inline-flex;
             align-items: center;
-            justify-content: center;
-            width: 40px;
-            height: 36px;
+            gap: 8px;
+            padding: 7px 12px;
+            border-radius: 999px;
+            border: 1px solid #d9d9d9;
+            background: #fff;
+            color: #2f2f2f;
             text-decoration: none;
+            font-size: 13px;
+            font-weight: 700;
+            transition: transform .08s ease, box-shadow .12s ease, background .12s ease;
+            white-space: nowrap;
         }
-        
-        .btn-edit:hover {
-            background: #ffca28;
-            transform: scale(1.05);
+
+        .action-pill i { 
+            font-size: 14px; 
         }
-        
-        .btn-delete {
-            background: #ff8a80;
-            color: #c62828;
-            border: none;
-            padding: 8px 12px;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            font-size: 16px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 40px;
-            height: 36px;
+
+        .action-pill:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 18px rgba(0,0,0,0.08);
+            background: #fafafa;
         }
-        
-        .btn-delete:hover {
-            background: #ff5252;
-            transform: scale(1.05);
+
+        .action-edit { 
+            border-color: #e6dfb9; 
+            color: #5a4f1a; 
+        }
+
+        .action-delete { 
+            border-color: #f6e6e6; 
+            color: #9b2c2c; 
+        }
+
+        .action-delete:hover {
+            background: #fdf2f2;
         }
 
         .table-container {
             overflow-x: auto;
-            border-radius: 8px;
-            border: 1px solid #e0e0e0;
-            margin-top: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            border: 1px solid #d9d9d9;
+            border-radius: 10px;
+            background: #fff;
             flex: 1;
             min-height: 0;
         }
@@ -326,7 +375,7 @@
         }
         
         .treatment-table thead {
-            background-color: #e0e0e0;
+            background-color: #dcdcdc;
             color: #333;
             text-transform: uppercase;
             letter-spacing: 0.5px;
@@ -337,11 +386,14 @@
             padding: 16px 12px;
             text-align: center;
             font-weight: 700;
-            font-size: 14px;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: .4px;
+            color: #2b2b2b;
             border-bottom: 1px solid #ccc;
             position: sticky;
             top: 0;
-            background: #e0e0e0;
+            background: #dcdcdc;
             z-index: 5;
         }
         
@@ -362,12 +414,6 @@
             text-align: center;
         }
         
-        .action-buttons {
-            display: flex;
-            gap: 8px;
-            justify-content: center;
-        }
-        
         .no-treatments {
             text-align: center;
             padding: 60px 20px;
@@ -378,7 +424,7 @@
         }
         
         .form-inline {
-            display: inline-block;
+            display: inline;
             margin: 0;
         }
 
@@ -388,6 +434,7 @@
             color: #888;
             font-size: 12px;
             background: #fafafa;
+            border-top: 1px solid #eaeaea;
         }
 
         /* Description column styles */
@@ -434,6 +481,10 @@
                 width: 90%;
                 top: 80px;
             }
+            
+            .actions {
+                justify-content: flex-start;
+            }
         }
 
         @media (max-width: 768px) {
@@ -456,21 +507,37 @@
     </style>
 </head>
 <body>
+<%
+    String staffName = (String) session.getAttribute("staffName");
+    String staffId = (String) session.getAttribute("staffId");
+    String staffRole = (String) session.getAttribute("staffRole");
+
+    if (staffName == null || staffName.trim().isEmpty()) staffName = "Staff";
+    if (staffId == null || staffId.trim().isEmpty()) staffId = "-";
+    if (staffRole == null || staffRole.trim().isEmpty()) staffRole = "Staff";
+%>
     
     <div class="overlay">
         <div class="top-nav">
             <div class="brand">
-                <img src="<%=request.getContextPath()%>/YesDentalPic/Logo.png" alt="Logo">
+                <img src="<%=request.getContextPath()%>/images/Logo.png" alt="Logo">
                 <div class="clinic-title">Yes Dental Clinic</div>
             </div>
 
-            <div class="user-chip">
-                <i class="fa-solid fa-user"></i>
-                <span><%= session.getAttribute("staffName") != null ? session.getAttribute("staffName") : "Staff" %></span>
+            <div class="top-right">
+                <div class="user-chip">
+                    <i class="fa-solid fa-user"></i>
+                    <span><%= staffName %></span>
+                </div>
+
+                <form action="<%=request.getContextPath()%>/LogoutServlet" method="post" style="margin:0;">
+                    <button type="submit" class="logout-btn">
+                        <i class="fa-solid fa-right-from-bracket"></i> Logout
+                    </button>
+                </form>
             </div>
         </div>
 
-        <!-- Notification Container -->
         <div class="notification-container">
             <% if (request.getAttribute("message") != null) { %>
                 <div class="notification notification-success">
@@ -524,26 +591,49 @@
         <div class="layout-wrap">
             <div class="layout">
 
-                <!-- Sidebar -->
+                <!-- UPDATED SIDEBAR -->
                 <div class="sidebar">
                     <h6>Staff Dashboard</h6>
-                    <a class="side-link" href="/YesDentalSupportSystem/StaffServlet?action=list">Staff</a>
-                    <a class="side-link" href="/YesDentalSupportSystem/AppointmentServlet?action=list">Appointments</a>
-                    <a class="side-link" href="/YesDentalSupportSystem/BillingServlet?action=list">Billing</a>
-                    <a class="side-link" href="/YesDentalSupportSystem/PatientServlet?action=list">Patients</a>
-                    <a class="side-link active" href="/YesDentalSupportSystem/TreatmentServlet?action=list">Treatments</a>
+
+                    <a class="side-link" href="<%=request.getContextPath()%>/staff/staffDashboard.jsp">
+                        <i class="fa-solid fa-chart-line"></i> Dashboard
+                    </a>
+
+                    <a class="side-link" href="/YesDentalSupportSystem/StaffServlet?action=list">
+                        <i class="fa-solid fa-user-doctor"></i> Staff
+                    </a>
+
+                    <a class="side-link" href="/YesDentalSupportSystem/AppointmentServlet?action=list">
+                        <i class="fa-solid fa-calendar-check"></i> Appointments
+                    </a>
+
+                    <a class="side-link" href="/YesDentalSupportSystem/BillingServlet?action=list">
+                        <i class="fa-solid fa-file-invoice-dollar"></i> Billing
+                    </a>
+
+                    <a class="side-link" href="/YesDentalSupportSystem/PatientServlet?action=list">
+                        <i class="fa-solid fa-hospital-user"></i> Patients
+                    </a>
+
+                    <a class="side-link active" href="/YesDentalSupportSystem/TreatmentServlet?action=list">
+                        <i class="fa-solid fa-tooth"></i> Treatments
+                    </a>
                 </div>
 
                 <div class="card-panel">
-                    <div class="page-header">
-                        <h2 class="page-title">Manage Treatments</h2>
+                    <div class="panel-header">
+                        <h4>
+                            <i class="fa-solid fa-tooth"></i>
+                            Manage Treatments
+                        </h4>
                         
                         <div class="controls-row">
                             <div class="search-wrapper">
-                                <input type="text" id="searchInput" class="search-input" placeholder="Search treatments..." onkeyup="filterTable()">
+                                <input type="text" id="searchInput" class="search-input" placeholder="Search treatments...">
                             </div>
                             
                             <a href="/YesDentalSupportSystem/treatment/addTreatment.jsp" class="btn-add-custom">
+                                <i class="fa-solid fa-plus"></i>
                                 Add Treatment
                             </a>
                         </div>
@@ -577,18 +667,18 @@
                                         </td>
                                         <td class="price-cell"><%= String.format("%.2f", treatment.getTreatmentPrice()) %></td>
                                         <td>
-                                            <div class="action-buttons">
+                                            <div class="actions">
                                                 <a href="TreatmentServlet?action=edit&treatment_id=<%= treatment.getTreatmentId() %>"
-                                                   class="btn-edit" title="Edit Treatment" style="background:transparent; color:#d4a017; box-shadow:none;">
-                                                    <i class="fas fa-pencil-alt"></i>
+                                                   class="action-pill action-edit" title="Edit Treatment">
+                                                    <i class="fa-solid fa-pen"></i> Edit
                                                 </a>
                                                 
                                                 <form action="TreatmentServlet" method="post" class="form-inline" 
                                                       onsubmit="return confirmDelete()">
                                                     <input type="hidden" name="action" value="delete">
                                                     <input type="hidden" name="treatment_id" value="<%= treatment.getTreatmentId() %>">
-                                                    <button type="submit" class="btn-delete" title="Delete Treatment" style="background:transparent; color:#666; box-shadow:none;">
-                                                        <i class="fas fa-trash"></i>
+                                                    <button type="submit" class="action-pill action-delete" title="Delete Treatment">
+                                                        <i class="fa-solid fa-trash"></i> Delete
                                                     </button>
                                                 </form>
                                             </div>
@@ -606,7 +696,7 @@
                                 <i class="fas fa-tooth" style="font-size: 48px; color: #ccc; margin-bottom: 15px;"></i>
                                 <h5 style="color: #666; margin-bottom: 10px;">No treatments found</h5>
                                 <a href="/YesDentalSupportSystem/treatment/addTreatment.jsp" class="btn-add-custom">
-                                    Add Your First Treatment
+                                    <i class="fa-solid fa-plus"></i> Add Your First Treatment
                                 </a>
                             </div>
                         <% } %>
@@ -623,38 +713,32 @@
         }
         
         // Search Functionality
-        function filterTable() {
-            var input, filter, table, tr, td, i, txtValue;
-            input = document.getElementById("searchInput");
-            filter = input.value.toUpperCase();
-            table = document.getElementById("treatmentTable");
-            tr = table.getElementsByTagName("tr");
-
-            // Loop through all table rows, and hide those who don't match the search query
-            for (i = 0; i < tr.length; i++) {
-                // Look at all columns for search: ID, Name, Description
-                tdId = tr[i].getElementsByTagName("td")[0];
-                tdName = tr[i].getElementsByTagName("td")[1];
-                tdDesc = tr[i].getElementsByTagName("td")[2];
-                
-                if (tdId || tdName || tdDesc) {
-                    txtValueId = tdId.textContent || tdId.innerText;
-                    txtValueName = tdName.textContent || tdName.innerText;
-                    txtValueDesc = tdDesc.textContent || tdDesc.innerText;
-                    
-                    if (txtValueId.toUpperCase().indexOf(filter) > -1 || 
-                        txtValueName.toUpperCase().indexOf(filter) > -1 ||
-                        txtValueDesc.toUpperCase().indexOf(filter) > -1) {
-                        tr[i].style.display = "";
-                    } else {
-                        tr[i].style.display = "none";
-                    }
-                }
-            }
-        }
-        
-        // Auto-hide notifications after 5 seconds
         document.addEventListener('DOMContentLoaded', function() {
+            const searchInput = document.getElementById("searchInput");
+            const table = document.getElementById("treatmentTable");
+            
+            if (searchInput && table) {
+                searchInput.addEventListener("input", function () {
+                    const keyword = this.value.trim().toLowerCase();
+                    const rows = table.querySelectorAll("tbody tr");
+                    
+                    rows.forEach(row => {
+                        const cells = row.querySelectorAll("td");
+                        let found = false;
+                        
+                        cells.forEach(cell => {
+                            const cellText = cell.textContent || cell.innerText;
+                            if (cellText.toLowerCase().includes(keyword)) {
+                                found = true;
+                            }
+                        });
+                        
+                        row.style.display = (!keyword || found) ? "" : "none";
+                    });
+                });
+            }
+            
+            // Auto-hide notifications after 5 seconds
             var notifications = document.querySelectorAll('.notification');
             notifications.forEach(function(notification) {
                 setTimeout(function() {
@@ -665,7 +749,7 @@
                             notification.parentNode.removeChild(notification);
                         }
                     }, 500);
-                }, 5000); // 5 seconds
+                }, 5000);
             });
         });
     </script>
