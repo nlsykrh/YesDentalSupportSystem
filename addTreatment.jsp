@@ -15,7 +15,8 @@
             height: 100vh;
             overflow: hidden;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: url("YesDentalPic/Background.png") no-repeat center center fixed;
+            /* FIXED: Added <%=request.getContextPath()%> and removed typo 's' at the end */
+            background: url("<%=request.getContextPath()%>/images/Background.png") no-repeat center center fixed;
             background-size: cover;
         }
 
@@ -26,7 +27,7 @@
         }
 
         /* Top Navigation */
-       .top-nav {
+        .top-nav {
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -51,16 +52,42 @@
             letter-spacing: 0.5px;
         }
 
+        .top-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
         .user-chip {
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            background: #f5f7f5;
-            padding: 8px 16px;
-            border-radius: 20px;
+            background: #f3f3f3;
+            padding: 6px 12px;
+            border-radius: 18px;
             font-size: 13px;
-            color: #2f4a34;
-            border: 1px solid #e1e8e1;
+            color: #2f3a34;
+        }
+
+        .logout-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 16px;
+            border-radius: 999px;
+            background: #c96a6a;
+            color: #fff;
+            font-size: 13px;
+            font-weight: 600;
+            text-decoration: none;
+            box-shadow: 0 6px 14px rgba(0,0,0,0.18);
+            transition: all .2s ease;
+            border: none;
+        }
+
+        .logout-btn:hover {
+            background: #b95a5a;
+            transform: translateY(-1px);
         }
 
         /* Main Layout */
@@ -473,39 +500,66 @@
     </style>
 </head>
 <body>
+<%
+    String staffName = (String) session.getAttribute("staffName");
+    String staffId = (String) session.getAttribute("staffId");
+    String staffRole = (String) session.getAttribute("staffRole");
+
+    if (staffName == null || staffName.trim().isEmpty()) staffName = "Staff";
+    if (staffId == null || staffId.trim().isEmpty()) staffId = "-";
+    if (staffRole == null || staffRole.trim().isEmpty()) staffRole = "Staff";
+%>
+    
     <div class="overlay">
         <div class="top-nav">
             <div class="brand">
-                <img src="<%=request.getContextPath()%>/YesDentalPic/Logo.png" alt="Logo">
+                <img src="<%=request.getContextPath()%>/images/Logo.png" alt="Logo">
                 <div class="clinic-title">Yes Dental Clinic</div>
             </div>
 
-            <div class="user-chip">
-                <i class="fa-solid fa-user"></i>
-                <span><%= session.getAttribute("staffName") != null ? session.getAttribute("staffName") : "Staff" %></span>
+            <div class="top-right">
+                <div class="user-chip">
+                    <i class="fa-solid fa-user"></i>
+                    <span><%= staffName %></span>
+                </div>
+
+                <form action="<%=request.getContextPath()%>/LogoutServlet" method="post" style="margin:0;">
+                    <button type="submit" class="logout-btn">
+                        <i class="fa-solid fa-right-from-bracket"></i> Logout
+                    </button>
+                </form>
             </div>
         </div>
 
         <div class="layout-wrap">
             <div class="layout">
 
-                <!-- Sidebar -->
+                <!-- UPDATED SIDEBAR -->
                 <div class="sidebar">
                     <h6>Staff Dashboard</h6>
+
+                    <a class="side-link" href="<%=request.getContextPath()%>/staff/staffDashboard.jsp">
+                        <i class="fa-solid fa-chart-line"></i> Dashboard
+                    </a>
+
                     <a class="side-link" href="/YesDentalSupportSystem/StaffServlet?action=list">
-                         Staff
+                        <i class="fa-solid fa-user-doctor"></i> Staff
                     </a>
+
                     <a class="side-link" href="/YesDentalSupportSystem/AppointmentServlet?action=list">
-                        Appointments
+                        <i class="fa-solid fa-calendar-check"></i> Appointments
                     </a>
+
                     <a class="side-link" href="/YesDentalSupportSystem/BillingServlet?action=list">
-                       Billing
+                        <i class="fa-solid fa-file-invoice-dollar"></i> Billing
                     </a>
+
                     <a class="side-link" href="/YesDentalSupportSystem/PatientServlet?action=list">
-                     Patients
+                        <i class="fa-solid fa-hospital-user"></i> Patients
                     </a>
+
                     <a class="side-link active" href="/YesDentalSupportSystem/TreatmentServlet?action=list">
-                       Treatments
+                        <i class="fa-solid fa-tooth"></i> Treatments
                     </a>
                 </div>
 
