@@ -78,70 +78,14 @@ public class AppointmentDAO {
                 }
             }
 
-            // 3) If CONFIRMED -> create billing & consent & installments
+            // 3) If CONFIRMED at creation -> create billing/consent/installments
             if ("Confirmed".equalsIgnoreCase(appointment.getAppointmentStatus())) {
-
-                BigDecimal totalAmount = BigDecimal.ZERO;
-                for (String tid : treatmentIds) {
-                    if (tid != null && !tid.trim().isEmpty()) {
-                        totalAmount = totalAmount.add(getTreatmentPriceFromDB(conn, tid.trim()));
-                    }
-                }
-
-                Billing billing = new Billing();
-                billing.setAppointmentId(appointment.getAppointmentId());
-                billing.setBillingMethod(billingMethod);
-                billing.setBillingStatus("Pending");
-                billing.setBillingAmount(totalAmount);
-                billing.setBillingDuedate(appointment.getAppointmentDate());
-
-                String billId = getNextBillingId(conn);
-                billing.setBillingId(billId);
-
-                String billSql =
-                        "INSERT INTO BILLING (BILLING_ID, BILLING_AMOUNT, BILLING_DUEDATE, " +
-                                "BILLING_STATUS, BILLING_METHOD, APPOINTMENT_ID) VALUES (?, ?, ?, ?, ?, ?)";
-
-                try (PreparedStatement ps = conn.prepareStatement(billSql)) {
-                    ps.setString(1, billing.getBillingId());
-                    ps.setBigDecimal(2, billing.getBillingAmount());
-                    ps.setDate(3, new java.sql.Date(billing.getBillingDuedate().getTime()));
-                    ps.setString(4, billing.getBillingStatus());
-                    ps.setString(5, billing.getBillingMethod());
-                    ps.setString(6, billing.getAppointmentId());
-                    ps.executeUpdate();
-                }
-
-                String consentId = getNextConsentId(conn);
-
-                String consentSql =
-                        "INSERT INTO DIGITALCONSENT (CONSENT_ID, PATIENT_IC, CONSENT_CONTEXT, CONSENT_SIGNDATE, APPOINTMENT_ID) " +
-                                "VALUES (?, ?, ?, ?, ?)";
-
-                StringBuilder ctx = new StringBuilder("Consent for treatments: ");
-                boolean first = true;
-                for (String tid : treatmentIds) {
-                    if (tid == null) continue;
-                    tid = tid.trim();
-                    if (tid.isEmpty()) continue;
-
-                    if (!first) ctx.append(", ");
-                    ctx.append(tid);
-                    first = false;
-                }
-                ctx.append(" (Appointment ").append(appointment.getAppointmentId()).append(")");
-
-                try (PreparedStatement ps = conn.prepareStatement(consentSql)) {
-                    ps.setString(1, consentId);
-                    ps.setString(2, appointment.getPatientIc());
-                    ps.setString(3, ctx.toString());
-                    ps.setTimestamp(4, null); // unsigned first (patient sign later)
-                    ps.setString(5, appointment.getAppointmentId());
-                    ps.executeUpdate();
-                }
-
-                if ("installment".equalsIgnoreCase(billingMethod) && numInstallments > 0) {
-                    createInstallments(conn, billing, numInstallments);
+                createBillingAndConsentIfMissing(conn, appointment.getAppointmentId().trim());
+                // installments only if installment billing method + numInstallments > 0
+                if (billingMethod != null && "installment".equalsIgnoreCase(billingMethod) && numInstallments > 0) {
+                    // create installments requires a Billing object; easiest: create billing first then read amount
+                    Billing billing = getBillingByAppointmentId(conn, appointment.getAppointmentId().trim());
+                    if (billing != null) createInstallments(conn, billing, numInstallments);
                 }
             }
 
@@ -370,42 +314,70 @@ public class AppointmentDAO {
     }
 
     // =========================
-    // ✅ UPDATE STATUS (OLD SIGNATURE - COMPAT)
-    // =========================
-    public boolean updateAppointmentStatus(String appointmentId, String status) {
-        return updateAppointmentStatus(appointmentId, status, null);
-    }
-
-    // =========================
-    // ✅ UPDATE STATUS (NEW) - STORE STAFF_ID WHEN CONFIRMED
+    // ✅ UPDATE STATUS + STAFF + CREATE BILLING + CREATE CONSENT (DERBY SAFE)
     // =========================
     public boolean updateAppointmentStatus(String appointmentId, String status, String staffId) {
 
-        String sql;
+        if (appointmentId == null || appointmentId.trim().isEmpty()) return false;
+        appointmentId = appointmentId.trim();
 
-        if ("Confirmed".equalsIgnoreCase(status)) {
-            sql = "UPDATE APPOINTMENT SET APPOINTMENT_STATUS = ?, STAFF_ID = ? WHERE TRIM(APPOINTMENT_ID) = ?";
-        } else {
-            sql = "UPDATE APPOINTMENT SET APPOINTMENT_STATUS = ? WHERE TRIM(APPOINTMENT_ID) = ?";
-        }
+        Connection conn = null;
+        try {
+            conn = DBConnection.getConnection();
+            conn.setAutoCommit(false);
 
-        try (Connection conn = DBConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+            boolean isConfirmed = "Confirmed".equalsIgnoreCase(status);
 
-            ps.setString(1, status);
-
-            if ("Confirmed".equalsIgnoreCase(status)) {
-                ps.setString(2, staffId); // can be null -> will store NULL
-                ps.setString(3, appointmentId == null ? "" : appointmentId.trim());
+            // 1) Update status (+ staffId if confirmed)
+            String sql;
+            if (isConfirmed) {
+                sql = "UPDATE APPOINTMENT SET APPOINTMENT_STATUS = ?, STAFF_ID = ? WHERE TRIM(APPOINTMENT_ID) = ?";
             } else {
-                ps.setString(2, appointmentId == null ? "" : appointmentId.trim());
+                sql = "UPDATE APPOINTMENT SET APPOINTMENT_STATUS = ? WHERE TRIM(APPOINTMENT_ID) = ?";
             }
 
-            return ps.executeUpdate() > 0;
+            int updated;
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setString(1, status);
+
+                if (isConfirmed) {
+                    if (staffId == null || staffId.trim().isEmpty()) {
+                        ps.setNull(2, Types.VARCHAR);
+                    } else {
+                        ps.setString(2, staffId.trim());
+                    }
+                    ps.setString(3, appointmentId);
+                } else {
+                    ps.setString(2, appointmentId);
+                }
+
+                updated = ps.executeUpdate();
+            }
+
+            if (updated <= 0) {
+                conn.rollback();
+                return false;
+            }
+
+            // 2) If Confirmed -> create billing + consent if missing
+            if (isConfirmed) {
+                createBillingAndConsentIfMissing(conn, appointmentId);
+            }
+
+            conn.commit();
+            return true;
 
         } catch (SQLException e) {
             e.printStackTrace();
+            if (conn != null) {
+                try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
+            }
             return false;
+
+        } finally {
+            if (conn != null) {
+                try { conn.setAutoCommit(true); conn.close(); } catch (SQLException e) { e.printStackTrace(); }
+            }
         }
     }
 
@@ -669,5 +641,136 @@ public class AppointmentDAO {
         }
 
         return false;
+    }
+
+    // ======================================================
+    // ✅ HELPERS: Create billing & consent if missing
+    // ======================================================
+    private void createBillingAndConsentIfMissing(Connection conn, String appointmentId) throws SQLException {
+
+        // get patient_ic, appointment_date, remarks
+        String patientIc = null;
+        java.sql.Date apptDate = null;
+        String remarks = null;
+
+        String getSql =
+                "SELECT PATIENT_IC, APPOINTMENT_DATE, REMARKS " +
+                "FROM APPOINTMENT WHERE TRIM(APPOINTMENT_ID)=?";
+
+        try (PreparedStatement ps = conn.prepareStatement(getSql)) {
+            ps.setString(1, appointmentId);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                patientIc = rs.getString("PATIENT_IC");
+                apptDate  = rs.getDate("APPOINTMENT_DATE");
+                remarks   = rs.getString("REMARKS");
+            }
+        }
+
+        if (patientIc == null || apptDate == null) {
+            throw new SQLException("Appointment data not found to create billing/consent.");
+        }
+
+        // ---------- BILLING (exists?) ----------
+        boolean billingExists;
+        String checkBillSql =
+                "SELECT 1 FROM BILLING WHERE TRIM(APPOINTMENT_ID)=? FETCH FIRST 1 ROWS ONLY";
+
+        try (PreparedStatement ps = conn.prepareStatement(checkBillSql)) {
+            ps.setString(1, appointmentId);
+            ResultSet rs = ps.executeQuery();
+            billingExists = rs.next();
+        }
+
+        if (!billingExists) {
+            BigDecimal totalAmount = BigDecimal.ZERO;
+
+            // ✅ IMPORTANT: alias "at" is reserved in Derby -> use "apt"
+            String totalSql =
+                    "SELECT COALESCE(SUM(COALESCE(t.TREATMENT_PRICE,0)),0) AS TOTAL " +
+                    "FROM APPOINTMENTTREATMENT apt " +
+                    "LEFT JOIN TREATMENT t ON TRIM(t.TREATMENT_ID)=TRIM(apt.TREATMENT_ID) " +
+                    "WHERE TRIM(apt.APPOINTMENT_ID)=?";
+
+            try (PreparedStatement ps = conn.prepareStatement(totalSql)) {
+                ps.setString(1, appointmentId);
+                ResultSet rs = ps.executeQuery();
+                if (rs.next()) {
+                    BigDecimal v = rs.getBigDecimal("TOTAL");
+                    totalAmount = (v != null) ? v : BigDecimal.ZERO;
+                }
+            }
+
+            String billId = getNextBillingId(conn);
+
+            String billSql =
+                    "INSERT INTO BILLING (BILLING_ID, BILLING_AMOUNT, BILLING_DUEDATE, BILLING_STATUS, BILLING_METHOD, APPOINTMENT_ID) " +
+                    "VALUES (?, ?, ?, ?, ?, ?)";
+
+            try (PreparedStatement ps = conn.prepareStatement(billSql)) {
+                ps.setString(1, billId);
+                ps.setBigDecimal(2, totalAmount);
+                ps.setDate(3, apptDate);
+                ps.setString(4, "Pending");
+                ps.setString(5, "Pay at Counter");
+                ps.setString(6, appointmentId);
+                ps.executeUpdate();
+            }
+        }
+
+        // ---------- CONSENT (exists?) ----------
+        boolean consentExists;
+        String checkConsentSql =
+                "SELECT 1 FROM DIGITALCONSENT WHERE TRIM(APPOINTMENT_ID)=? FETCH FIRST 1 ROWS ONLY";
+
+        try (PreparedStatement ps = conn.prepareStatement(checkConsentSql)) {
+            ps.setString(1, appointmentId);
+            ResultSet rs = ps.executeQuery();
+            consentExists = rs.next();
+        }
+
+        if (!consentExists) {
+            String consentId = getNextConsentId(conn);
+
+            String consentContext =
+                    "Patient has given consent for " + ((remarks != null) ? remarks.trim() : "");
+
+            String consentSql =
+                    "INSERT INTO DIGITALCONSENT (CONSENT_ID, PATIENT_IC, CONSENT_CONTEXT, CONSENT_SIGNDATE, APPOINTMENT_ID) " +
+                    "VALUES (?, ?, ?, ?, ?)";
+
+            try (PreparedStatement ps = conn.prepareStatement(consentSql)) {
+                ps.setString(1, consentId);
+                ps.setString(2, patientIc);
+                ps.setString(3, consentContext);
+                ps.setNull(4, Types.TIMESTAMP);  // ✅ NULL until patient signs
+                ps.setString(5, appointmentId);
+                ps.executeUpdate();
+            }
+        }
+    }
+
+    // small helper (only used if you ever want installments in addAppointment confirmed)
+    private Billing getBillingByAppointmentId(Connection conn, String appointmentId) {
+        String sql =
+                "SELECT BILLING_ID, BILLING_AMOUNT, BILLING_DUEDATE, BILLING_STATUS, BILLING_METHOD, APPOINTMENT_ID " +
+                "FROM BILLING WHERE TRIM(APPOINTMENT_ID)=? FETCH FIRST 1 ROWS ONLY";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, appointmentId);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                Billing b = new Billing();
+                b.setBillingId(rs.getString("BILLING_ID"));
+                b.setBillingAmount(rs.getBigDecimal("BILLING_AMOUNT"));
+                b.setBillingDuedate(rs.getDate("BILLING_DUEDATE"));
+                b.setBillingStatus(rs.getString("BILLING_STATUS"));
+                b.setBillingMethod(rs.getString("BILLING_METHOD"));
+                b.setAppointmentId(rs.getString("APPOINTMENT_ID"));
+                return b;
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return null;
     }
 }

@@ -336,7 +336,7 @@ public class AppointmentServlet extends HttpServlet {
         request.getRequestDispatcher("/appointment/viewAppointmentDetails.jsp").forward(request, response);
     }
 
-    // ✅ FIXED: if staff updates status -> Confirmed, store STAFF_ID
+    // ✅ FIXED: when staff updates to Confirmed -> store staff + create billing + consent in DAO
     private void updateAppointment(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
 
@@ -386,7 +386,7 @@ public class AppointmentServlet extends HttpServlet {
                 throw new Exception("This time slot is already CONFIRMED. Choose another time.");
             }
 
-            // new status
+            // Determine new status
             String newStatus = oldStatus;
             if (isStaff(request)) {
                 String statusParam = request.getParameter("appointment_status");
@@ -394,23 +394,31 @@ public class AppointmentServlet extends HttpServlet {
                 newStatus = statusParam.trim();
             }
 
-            // 1) update appointment
-            boolean ok = appointmentDAO.updateAppointment(appointmentId, newDate, timeStr, newStatus, remarks);
-            if (!ok) throw new Exception("Failed to update appointment.");
+            // Check if status is changing to Confirmed
+            boolean isChangingToConfirmed = !oldStatus.equalsIgnoreCase(newStatus) && "Confirmed".equalsIgnoreCase(newStatus);
 
-            // 2) update treatments
-            boolean tOk = appointmentDAO.updateAppointmentTreatments(appointmentId, treatmentIds);
-            if (!tOk) throw new Exception("Appointment updated, but failed to update treatments.");
-
-            // ✅ IMPORTANT: if staff changed status to Confirmed -> set STAFF_ID
-            if (isStaff(request) && "Confirmed".equalsIgnoreCase(newStatus)) {
+            if (isChangingToConfirmed) {
+                // ✅ If changing to Confirmed: use updateAppointmentStatus() which handles status + staff + billing + consent atomically
                 String staffId = getSessionStaffId(request);
+                
+                // First update treatments
+                boolean tOk = appointmentDAO.updateAppointmentTreatments(appointmentId, treatmentIds);
+                if (!tOk) throw new Exception("Failed to update treatments.");
+                
+                // Then update appointment (date/time/remarks) but keep existing status
+                boolean ok = appointmentDAO.updateAppointment(appointmentId, newDate, timeStr, oldStatus, remarks);
+                if (!ok) throw new Exception("Failed to update appointment details.");
 
-                // DEBUG (optional)
-                System.out.println(">>> UPDATE -> CONFIRMED staffId = " + staffId);
+                // Finally, confirm appointment with staff + billing + consent as single transaction
+                boolean confirmOk = appointmentDAO.updateAppointmentStatus(appointmentId, "Confirmed", staffId);
+                if (!confirmOk) throw new Exception("Failed to confirm appointment (status/staff/billing/consent).");
+            } else {
+                // ✅ Not changing to Confirmed: just update normally
+                boolean ok = appointmentDAO.updateAppointment(appointmentId, newDate, timeStr, newStatus, remarks);
+                if (!ok) throw new Exception("Failed to update appointment.");
 
-                boolean sOk = appointmentDAO.updateAppointmentStatus(appointmentId, "Confirmed", staffId);
-                if (!sOk) throw new Exception("Appointment updated but failed to store STAFF_ID.");
+                boolean tOk = appointmentDAO.updateAppointmentTreatments(appointmentId, treatmentIds);
+                if (!tOk) throw new Exception("Appointment updated, but failed to update treatments.");
             }
 
             request.setAttribute("messageType", "edit");
@@ -446,6 +454,7 @@ public class AppointmentServlet extends HttpServlet {
         listAppointments(request, response);
     }
 
+    // ✅ CONFIRM button (staff)
     private void confirmAppointment(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
 
@@ -454,6 +463,7 @@ public class AppointmentServlet extends HttpServlet {
 
             String appointmentId = request.getParameter("appointment_id");
             if (appointmentId == null || appointmentId.trim().isEmpty()) throw new Exception("Appointment ID is required");
+            appointmentId = appointmentId.trim();
 
             Appointment appt = appointmentDAO.getAppointmentById(appointmentId);
             if (appt == null) throw new Exception("Appointment not found");
@@ -468,20 +478,15 @@ public class AppointmentServlet extends HttpServlet {
             }
 
             String staffId = getSessionStaffId(request);
-            System.out.println(">>> CONFIRM staffId = " + staffId);
 
+            // ✅ ONE CALL: update status + staff + create billing + create consent
             boolean success = appointmentDAO.updateAppointmentStatus(appointmentId, "Confirmed", staffId);
 
             if (success) {
-                boolean billingCreated = billingDAO.createBillingForAppointment(appointmentId, "Pay at Counter", 1);
-                if (billingCreated) {
-                    request.setAttribute("messageType", "book");
-                    request.setAttribute("message", "Appointment confirmed and billing created.");
-                } else {
-                    request.setAttribute("error", "Appointment confirmed but billing failed.");
-                }
+                request.setAttribute("messageType", "book");
+                request.setAttribute("message", "Appointment confirmed. Billing + Digital Consent created.");
             } else {
-                request.setAttribute("error", "Failed to confirm appointment.");
+                request.setAttribute("error", "Failed to confirm appointment (status/staff/billing/consent).");
             }
 
         } catch (Exception e) {
