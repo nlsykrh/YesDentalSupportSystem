@@ -16,6 +16,8 @@ import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.*;
 
+import java.net.URLEncoder;
+
 @WebServlet("/AppointmentServlet")
 public class AppointmentServlet extends HttpServlet {
 
@@ -34,7 +36,6 @@ public class AppointmentServlet extends HttpServlet {
         dateFormat = new SimpleDateFormat("yyyy-MM-dd");
     }
 
-    // ✅ patient session key = "patientId" (contains PATIENT_IC)
     private boolean isPatient(HttpServletRequest request) {
         HttpSession session = request.getSession(false);
         return session != null && session.getAttribute("patientId") != null;
@@ -50,6 +51,11 @@ public class AppointmentServlet extends HttpServlet {
         return (session == null) ? null : (String) session.getAttribute("patientId");
     }
 
+    private String getSessionStaffId(HttpServletRequest request) {
+        HttpSession session = request.getSession(false);
+        return (session == null) ? null : (String) session.getAttribute("staffId");
+    }
+
     private boolean isLoggedIn(HttpServletRequest request) {
         return isPatient(request) || isStaff(request);
     }
@@ -60,7 +66,6 @@ public class AppointmentServlet extends HttpServlet {
 
         request.setCharacterEncoding("UTF-8");
 
-        // ✅ Block if not logged in
         if (!isLoggedIn(request)) {
             response.sendRedirect(request.getContextPath() + "/login.jsp?error=true");
             return;
@@ -83,7 +88,6 @@ public class AppointmentServlet extends HttpServlet {
                 break;
 
             case "add":
-                // patient/staff both can see schedule page
                 request.getRequestDispatcher("/appointment/scheduleAppointment.jsp").forward(request, response);
                 break;
 
@@ -102,7 +106,6 @@ public class AppointmentServlet extends HttpServlet {
 
         request.setCharacterEncoding("UTF-8");
 
-        // ✅ Block if not logged in
         if (!isLoggedIn(request)) {
             response.sendRedirect(request.getContextPath() + "/login.jsp?error=true");
             return;
@@ -154,17 +157,11 @@ public class AppointmentServlet extends HttpServlet {
     private void listAppointments(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
 
-        // ✅ PATIENT sees only own appointments
         if (isPatient(request) && !isStaff(request)) {
             String patientIc = getSessionPatientIc(request);
-
-            // ✅ BEST: query only mine (recommended)
-            // If you don't have getAppointmentsByPatientIc, add it (code below in DAO section)
             List<Appointment> mine = appointmentDAO.getAppointmentsByPatientIc(patientIc);
             request.setAttribute("appointments", mine);
-
         } else {
-            // ✅ STAFF sees all
             List<Appointment> all = appointmentDAO.getAllAppointments();
             request.setAttribute("appointments", all);
         }
@@ -173,13 +170,13 @@ public class AppointmentServlet extends HttpServlet {
         dispatcher.forward(request, response);
     }
 
+    // ✅ supports multiple treatments
     private void addAppointment(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
 
         try {
             String patientIc;
 
-            // ✅ patient uses session patientId (PATIENT_IC)
             if (isPatient(request) && !isStaff(request)) {
                 patientIc = getSessionPatientIc(request);
             } else {
@@ -188,17 +185,19 @@ public class AppointmentServlet extends HttpServlet {
 
             String appointmentDateStr = request.getParameter("appointment_date");
             String appointmentTime = request.getParameter("appointment_time");
-            String treatmentId = request.getParameter("treatment_id");
+            String[] treatmentIds = request.getParameterValues("treatment_ids");
             String billingMethod = request.getParameter("billing_method");
 
             if (patientIc == null || patientIc.trim().isEmpty()
                     || appointmentDateStr == null || appointmentDateStr.trim().isEmpty()
-                    || appointmentTime == null || appointmentTime.trim().isEmpty()
-                    || treatmentId == null || treatmentId.trim().isEmpty()) {
+                    || appointmentTime == null || appointmentTime.trim().isEmpty()) {
                 throw new Exception("Please fill in all required fields");
             }
 
-            // normalize time (avoid 14:00:00)
+            if (treatmentIds == null || treatmentIds.length == 0) {
+                throw new Exception("Please select at least one treatment");
+            }
+
             if (appointmentTime.length() >= 5) appointmentTime = appointmentTime.substring(0, 5);
 
             Appointment appointment = new Appointment();
@@ -217,7 +216,6 @@ public class AppointmentServlet extends HttpServlet {
             appointment.setAppointmentStatus("Pending");
             appointment.setRemarks(request.getParameter("remarks"));
 
-            // slot block (confirmed only)
             if (appointmentDAO.isConfirmedSlotTaken(appointmentDate, appointmentTime)) {
                 request.setAttribute("error", "This slot is already CONFIRMED. Please choose another date/time.");
                 request.getRequestDispatcher("/appointment/scheduleAppointment.jsp").forward(request, response);
@@ -235,10 +233,14 @@ public class AppointmentServlet extends HttpServlet {
                     throw new Exception("Installments must be 1 to 5");
             }
 
-            boolean success = appointmentDAO.addAppointment(appointment, treatmentId, billingMethod, numInstallments);
+            boolean success = appointmentDAO.addAppointment(appointment, treatmentIds, billingMethod, numInstallments);
 
-            if (success) request.setAttribute("message", "Appointment scheduled successfully!");
-            else request.setAttribute("error", "Failed to schedule appointment.");
+            if (success) {
+                request.setAttribute("messageType", "book");
+                request.setAttribute("message", "Appointment scheduled successfully!");
+            } else {
+                request.setAttribute("error", "Failed to schedule appointment.");
+            }
 
             listAppointments(request, response);
 
@@ -252,39 +254,54 @@ public class AppointmentServlet extends HttpServlet {
             throws ServletException, IOException {
 
         String appointmentId = request.getParameter("appointment_id");
-
         if (appointmentId == null || appointmentId.trim().isEmpty()) {
             request.setAttribute("error", "Appointment ID is required.");
             listAppointments(request, response);
             return;
         }
 
-        Appointment appointment = appointmentDAO.getAppointmentById(appointmentId);
+        appointmentId = appointmentId.trim();
 
+        Appointment appointment = appointmentDAO.getAppointmentById(appointmentId);
         if (appointment == null) {
             request.setAttribute("error", "Appointment not found.");
             listAppointments(request, response);
             return;
         }
 
-        // ✅ patient cannot edit others
+        String status = appointment.getAppointmentStatus() != null ? appointment.getAppointmentStatus() : "";
+
+        // ===== PATIENT RULES =====
         if (isPatient(request) && !isStaff(request)) {
             String patientIc = getSessionPatientIc(request);
+
             if (patientIc == null || !patientIc.equals(appointment.getPatientIc())) {
                 request.setAttribute("error", "Not allowed.");
                 listAppointments(request, response);
                 return;
             }
+
+            if (!"Confirmed".equalsIgnoreCase(status)) {
+                request.setAttribute("error", "You can only edit your appointment when status is CONFIRMED.");
+                listAppointments(request, response);
+                return;
+            }
         }
 
-        // ✅ BOTH staff & patient can edit ONLY when status = Confirmed
-        if (!"Confirmed".equalsIgnoreCase(appointment.getAppointmentStatus())) {
-            request.setAttribute("error", "Edit is allowed only for CONFIRMED appointments.");
-            listAppointments(request, response);
-            return;
+        // ===== STAFF RULES =====
+        if (isStaff(request)) {
+            if (!"Confirmed".equalsIgnoreCase(status) && !"Pending".equalsIgnoreCase(status)) {
+                request.setAttribute("error", "Staff can only edit appointments with status CONFIRMED or PENDING.");
+                listAppointments(request, response);
+                return;
+            }
         }
+
+        List<AppointmentTreatment> currentTreatments = appointmentDAO.getAppointmentTreatments(appointmentId);
 
         request.setAttribute("appointment", appointment);
+        request.setAttribute("currentTreatments", currentTreatments);
+
         request.getRequestDispatcher("/appointment/editAppointment.jsp").forward(request, response);
     }
 
@@ -292,6 +309,9 @@ public class AppointmentServlet extends HttpServlet {
             throws ServletException, IOException {
 
         String appointmentId = request.getParameter("appointment_id");
+        if (appointmentId == null || appointmentId.trim().isEmpty()) {
+            appointmentId = request.getParameter("appointmentId");
+        }
 
         if (appointmentId == null || appointmentId.trim().isEmpty()) {
             request.setAttribute("error", "Appointment ID is required.");
@@ -299,55 +319,65 @@ public class AppointmentServlet extends HttpServlet {
             return;
         }
 
-        Appointment appointment = appointmentDAO.getAppointmentById(appointmentId);
+        appointmentId = appointmentId.trim();
 
+        Appointment appointment = appointmentDAO.getAppointmentById(appointmentId);
         if (appointment == null) {
             request.setAttribute("error", "Appointment not found.");
             listAppointments(request, response);
             return;
         }
 
-        // ✅ patient cannot view others
-        if (isPatient(request) && !isStaff(request)) {
-            String patientIc = getSessionPatientIc(request);
-            if (patientIc == null || !patientIc.equals(appointment.getPatientIc())) {
-                request.setAttribute("error", "Not allowed.");
-                listAppointments(request, response);
-                return;
-            }
-        }
+        List<AppointmentTreatment> treatments = appointmentDAO.getAppointmentTreatments(appointmentId);
 
         request.setAttribute("appointment", appointment);
+        request.setAttribute("treatments", treatments);
+
         request.getRequestDispatcher("/appointment/viewAppointmentDetails.jsp").forward(request, response);
     }
 
-    // Staff only
+    // ✅ FIXED: if staff updates status -> Confirmed, store STAFF_ID
     private void updateAppointment(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
 
         try {
-            if (!isStaff(request)) throw new Exception("Only staff can update appointment");
-
             String appointmentId = request.getParameter("appointment_id");
             String dateStr = request.getParameter("appointment_date");
             String timeStr = request.getParameter("appointment_time");
-            String status = request.getParameter("appointment_status");
             String remarks = request.getParameter("remarks");
+            String[] treatmentIds = request.getParameterValues("treatment_ids");
 
             if (appointmentId == null || appointmentId.trim().isEmpty()) throw new Exception("Appointment ID is required");
             if (dateStr == null || dateStr.trim().isEmpty()) throw new Exception("Appointment date is required");
             if (timeStr == null || timeStr.trim().isEmpty()) throw new Exception("Appointment time is required");
-            if (status == null || status.trim().isEmpty()) throw new Exception("Appointment status is required");
+            if (treatmentIds == null || treatmentIds.length == 0) throw new Exception("Please select at least one treatment");
 
+            appointmentId = appointmentId.trim();
             if (timeStr.length() >= 5) timeStr = timeStr.substring(0, 5);
-
-            Date newDate = dateFormat.parse(dateStr);
 
             Appointment old = appointmentDAO.getAppointmentById(appointmentId);
             if (old == null) throw new Exception("Appointment not found");
 
+            String oldStatus = old.getAppointmentStatus() != null ? old.getAppointmentStatus() : "";
+
+            // PATIENT RULES
+            if (isPatient(request) && !isStaff(request)) {
+                String patientIc = getSessionPatientIc(request);
+                if (patientIc == null || !patientIc.equals(old.getPatientIc())) throw new Exception("Not allowed.");
+                if (!"Confirmed".equalsIgnoreCase(oldStatus)) throw new Exception("You can only edit your appointment when status is CONFIRMED.");
+            }
+
+            // STAFF RULES
+            if (isStaff(request)) {
+                if (!"Confirmed".equalsIgnoreCase(oldStatus) && !"Pending".equalsIgnoreCase(oldStatus)) {
+                    throw new Exception("Staff can only edit appointments with status CONFIRMED or PENDING.");
+                }
+            }
+
+            Date newDate = dateFormat.parse(dateStr);
+
             boolean changingSlot =
-                    !dateFormat.format(old.getAppointmentDate()).equals(dateStr)
+                    (old.getAppointmentDate() == null || !dateFormat.format(old.getAppointmentDate()).equals(dateStr))
                             || !(old.getAppointmentTime() != null && old.getAppointmentTime().length() >= 5
                             ? old.getAppointmentTime().substring(0, 5).equals(timeStr)
                             : timeStr.equals(old.getAppointmentTime()));
@@ -356,10 +386,35 @@ public class AppointmentServlet extends HttpServlet {
                 throw new Exception("This time slot is already CONFIRMED. Choose another time.");
             }
 
-            boolean ok = appointmentDAO.updateAppointment(appointmentId, newDate, timeStr, status, remarks);
+            // new status
+            String newStatus = oldStatus;
+            if (isStaff(request)) {
+                String statusParam = request.getParameter("appointment_status");
+                if (statusParam == null || statusParam.trim().isEmpty()) throw new Exception("Appointment status is required");
+                newStatus = statusParam.trim();
+            }
 
-            if (ok) request.setAttribute("message", "Appointment updated successfully!");
-            else request.setAttribute("error", "Failed to update appointment.");
+            // 1) update appointment
+            boolean ok = appointmentDAO.updateAppointment(appointmentId, newDate, timeStr, newStatus, remarks);
+            if (!ok) throw new Exception("Failed to update appointment.");
+
+            // 2) update treatments
+            boolean tOk = appointmentDAO.updateAppointmentTreatments(appointmentId, treatmentIds);
+            if (!tOk) throw new Exception("Appointment updated, but failed to update treatments.");
+
+            // ✅ IMPORTANT: if staff changed status to Confirmed -> set STAFF_ID
+            if (isStaff(request) && "Confirmed".equalsIgnoreCase(newStatus)) {
+                String staffId = getSessionStaffId(request);
+
+                // DEBUG (optional)
+                System.out.println(">>> UPDATE -> CONFIRMED staffId = " + staffId);
+
+                boolean sOk = appointmentDAO.updateAppointmentStatus(appointmentId, "Confirmed", staffId);
+                if (!sOk) throw new Exception("Appointment updated but failed to store STAFF_ID.");
+            }
+
+            request.setAttribute("messageType", "edit");
+            request.setAttribute("message", "Appointment updated successfully!");
 
         } catch (Exception e) {
             request.setAttribute("error", "Error: " + e.getMessage());
@@ -379,8 +434,10 @@ public class AppointmentServlet extends HttpServlet {
 
             boolean success = appointmentDAO.deleteAppointment(appointmentId);
 
-            if (success) request.setAttribute("message", "Appointment deleted successfully!");
-            else request.setAttribute("error", "Failed to delete appointment.");
+            if (success) {
+                request.setAttribute("messageType", "book");
+                request.setAttribute("message", "Appointment deleted successfully!");
+            } else request.setAttribute("error", "Failed to delete appointment.");
 
         } catch (Exception e) {
             request.setAttribute("error", "Error: " + e.getMessage());
@@ -410,12 +467,19 @@ public class AppointmentServlet extends HttpServlet {
                 return;
             }
 
-            boolean success = appointmentDAO.updateAppointmentStatus(appointmentId, "Confirmed");
+            String staffId = getSessionStaffId(request);
+            System.out.println(">>> CONFIRM staffId = " + staffId);
+
+            boolean success = appointmentDAO.updateAppointmentStatus(appointmentId, "Confirmed", staffId);
 
             if (success) {
                 boolean billingCreated = billingDAO.createBillingForAppointment(appointmentId, "Pay at Counter", 1);
-                if (billingCreated) request.setAttribute("message", "Appointment confirmed and billing created.");
-                else request.setAttribute("error", "Appointment confirmed but billing failed.");
+                if (billingCreated) {
+                    request.setAttribute("messageType", "book");
+                    request.setAttribute("message", "Appointment confirmed and billing created.");
+                } else {
+                    request.setAttribute("error", "Appointment confirmed but billing failed.");
+                }
             } else {
                 request.setAttribute("error", "Failed to confirm appointment.");
             }
@@ -427,28 +491,166 @@ public class AppointmentServlet extends HttpServlet {
         listAppointments(request, response);
     }
 
-    // ===== Keep your existing versions for these 4 methods =====
+    // =======================
+    // ✅ SHOW DIGITAL CONSENT
+    // =======================
     private void showDigitalConsent(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-        request.setAttribute("error", "showDigitalConsent: keep your existing code here");
-        listAppointments(request, response);
+
+        try {
+            if (!isPatient(request) || isStaff(request)) {
+                throw new Exception("Only patient can sign digital consent.");
+            }
+
+            String appointmentId = request.getParameter("appointment_id");
+            if (appointmentId == null || appointmentId.trim().isEmpty()) {
+                throw new Exception("Appointment ID is required.");
+            }
+            appointmentId = appointmentId.trim();
+
+            Appointment appt = appointmentDAO.getAppointmentById(appointmentId);
+            if (appt == null) throw new Exception("Appointment not found.");
+
+            String sessionIc = getSessionPatientIc(request);
+            if (sessionIc == null || !sessionIc.equals(appt.getPatientIc())) {
+                throw new Exception("Not allowed.");
+            }
+
+            DigitalConsent consent = consentDAO.getConsentByAppointmentId(appointmentId);
+            if (consent == null) throw new Exception("Digital consent record not found.");
+
+            Patient patient = patientDAO.getPatientByIc(sessionIc);
+            if (patient == null) throw new Exception("Patient record not found.");
+
+            request.setAttribute("appointment", appt);
+            request.setAttribute("patient", patient);
+            request.setAttribute("consent", consent);
+
+            request.getRequestDispatcher("/appointment/digitalConsent.jsp")
+                    .forward(request, response);
+
+        } catch (Exception e) {
+            request.setAttribute("error", "Error: " + e.getMessage());
+            listAppointments(request, response);
+        }
     }
 
     private void processDigitalConsent(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-        request.setAttribute("error", "processDigitalConsent: keep your existing code here");
-        listAppointments(request, response);
+
+        try {
+            if (!isPatient(request) || isStaff(request)) {
+                throw new Exception("Only patient can sign consent.");
+            }
+
+            String appointmentId = request.getParameter("appointment_id");
+            if (appointmentId == null || appointmentId.trim().isEmpty()) {
+                throw new Exception("Appointment ID is required.");
+            }
+            appointmentId = appointmentId.trim();
+
+            Appointment appt = appointmentDAO.getAppointmentById(appointmentId);
+            if (appt == null) throw new Exception("Appointment not found.");
+
+            String sessionIc = getSessionPatientIc(request);
+            if (sessionIc == null || !sessionIc.equals(appt.getPatientIc())) {
+                throw new Exception("Not allowed.");
+            }
+
+            if (!"Confirmed".equalsIgnoreCase(appt.getAppointmentStatus())) {
+                throw new Exception("You can only sign consent when appointment is Confirmed.");
+            }
+
+            DigitalConsent consent = consentDAO.getConsentByAppointmentId(appointmentId);
+            if (consent == null) throw new Exception("Consent record not found.");
+
+            if (consent.getConsentSigndate() != null) {
+                throw new Exception("Consent already signed.");
+            }
+
+            boolean ok = consentDAO.signConsent(appointmentId);
+
+            if (ok) {
+                response.sendRedirect(request.getContextPath()
+                        + "/AppointmentServlet?action=list&msg="
+                        + URLEncoder.encode("Digital consent signed successfully!", "UTF-8"));
+                return;
+            } else {
+                throw new Exception("Failed to sign digital consent.");
+            }
+
+        } catch (Exception e) {
+            request.setAttribute("error", "Error: " + e.getMessage());
+            listAppointments(request, response);
+        }
     }
 
     private void declineDigitalConsent(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-        request.setAttribute("error", "declineDigitalConsent: keep your existing code here");
+
+        try {
+            if (!isPatient(request) || isStaff(request)) {
+                throw new Exception("Only patient can reject consent.");
+            }
+
+            String appointmentId = request.getParameter("appointment_id");
+            if (appointmentId == null || appointmentId.trim().isEmpty()) {
+                throw new Exception("Appointment ID is required.");
+            }
+            appointmentId = appointmentId.trim();
+
+            Appointment appt = appointmentDAO.getAppointmentById(appointmentId);
+            if (appt == null) throw new Exception("Appointment not found.");
+
+            String sessionIc = getSessionPatientIc(request);
+            if (sessionIc == null || !sessionIc.equals(appt.getPatientIc())) {
+                throw new Exception("Not allowed.");
+            }
+
+            if ("Cancelled".equalsIgnoreCase(appt.getAppointmentStatus())) {
+                request.setAttribute("messageType", "cancel");
+                request.setAttribute("message", "Appointment already cancelled.");
+                listAppointments(request, response);
+                return;
+            }
+
+            boolean ok = appointmentDAO.updateAppointmentStatus(appointmentId, "Cancelled", null);
+
+            if (ok) {
+                request.setAttribute("messageType", "cancel");
+                request.setAttribute("message", "Consent rejected. Your appointment has been cancelled.");
+            } else {
+                throw new Exception("Failed to cancel appointment.");
+            }
+
+        } catch (Exception e) {
+            request.setAttribute("error", "Error: " + e.getMessage());
+        }
+
         listAppointments(request, response);
     }
 
     private void cancelAppointment(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-        request.setAttribute("error", "cancelAppointment: keep your existing code here");
+
+        try {
+            String appointmentId = request.getParameter("appointment_id");
+            if (appointmentId == null || appointmentId.trim().isEmpty())
+                throw new Exception("Appointment ID is required");
+
+            boolean ok = appointmentDAO.updateAppointmentStatus(appointmentId.trim(), "Cancelled", null);
+
+            if (ok) {
+                request.setAttribute("messageType", "cancel");
+                request.setAttribute("message", "Your appointment has been cancelled.");
+            } else {
+                request.setAttribute("error", "Failed to cancel appointment.");
+            }
+
+        } catch (Exception e) {
+            request.setAttribute("error", "Error: " + e.getMessage());
+        }
+
         listAppointments(request, response);
     }
 }

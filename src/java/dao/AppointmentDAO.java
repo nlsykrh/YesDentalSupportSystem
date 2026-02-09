@@ -30,10 +30,10 @@ public class AppointmentDAO {
         }
     }
 
-    // =========================
-    // ADD APPOINTMENT (TRANSACTION)
-    // =========================
-    public boolean addAppointment(Appointment appointment, String treatmentId,
+    // ======================================================
+    // ✅ ADD APPOINTMENT (MULTI TREATMENT) - TRANSACTION
+    // ======================================================
+    public boolean addAppointment(Appointment appointment, String[] treatmentIds,
                                   String billingMethod, int numInstallments) {
 
         Connection conn = null;
@@ -56,22 +56,45 @@ public class AppointmentDAO {
                 ps.executeUpdate();
             }
 
-            // 2) Insert APPOINTMENTTREATMENT
+            // 2) Insert APPOINTMENTTREATMENT (MULTI)
             String atSql =
                     "INSERT INTO APPOINTMENTTREATMENT (APPOINTMENT_ID, TREATMENT_ID, APPOINTMENT_DATE) " +
                             "VALUES (?, ?, ?)";
 
-            try (PreparedStatement ps = conn.prepareStatement(atSql)) {
-                ps.setString(1, appointment.getAppointmentId());
-                ps.setString(2, treatmentId);
-                ps.setDate(3, new java.sql.Date(appointment.getAppointmentDate().getTime()));
-                ps.executeUpdate();
+            if (treatmentIds == null || treatmentIds.length == 0) {
+                throw new SQLException("No treatment selected");
+            }
+
+            for (String treatmentId : treatmentIds) {
+                if (treatmentId == null) continue;
+                treatmentId = treatmentId.trim();
+                if (treatmentId.isEmpty()) continue;
+
+                try (PreparedStatement ps = conn.prepareStatement(atSql)) {
+                    ps.setString(1, appointment.getAppointmentId().trim());
+                    ps.setString(2, treatmentId);
+                    ps.setDate(3, new java.sql.Date(appointment.getAppointmentDate().getTime()));
+                    ps.executeUpdate();
+                }
             }
 
             // 3) If CONFIRMED -> create billing & consent & installments
             if ("Confirmed".equalsIgnoreCase(appointment.getAppointmentStatus())) {
 
-                Billing billing = createBilling(appointment, treatmentId, billingMethod);
+                BigDecimal totalAmount = BigDecimal.ZERO;
+                for (String tid : treatmentIds) {
+                    if (tid != null && !tid.trim().isEmpty()) {
+                        totalAmount = totalAmount.add(getTreatmentPriceFromDB(conn, tid.trim()));
+                    }
+                }
+
+                Billing billing = new Billing();
+                billing.setAppointmentId(appointment.getAppointmentId());
+                billing.setBillingMethod(billingMethod);
+                billing.setBillingStatus("Pending");
+                billing.setBillingAmount(totalAmount);
+                billing.setBillingDuedate(appointment.getAppointmentDate());
+
                 String billId = getNextBillingId(conn);
                 billing.setBillingId(billId);
 
@@ -89,22 +112,31 @@ public class AppointmentDAO {
                     ps.executeUpdate();
                 }
 
-                // ⚠️ NOTE:
-                // If your DIGITALCONSENT table has APPOINTMENT_ID column, you must include it here.
-                // Your current insert does NOT include APPOINTMENT_ID.
-                DigitalConsent consent = createDigitalConsent(appointment, treatmentId);
                 String consentId = getNextConsentId(conn);
-                consent.setConsentId(consentId);
 
                 String consentSql =
-                        "INSERT INTO DIGITALCONSENT (CONSENT_ID, PATIENT_IC, CONSENT_CONTEXT, CONSENT_SIGNDATE) " +
-                                "VALUES (?, ?, ?, ?)";
+                        "INSERT INTO DIGITALCONSENT (CONSENT_ID, PATIENT_IC, CONSENT_CONTEXT, CONSENT_SIGNDATE, APPOINTMENT_ID) " +
+                                "VALUES (?, ?, ?, ?, ?)";
+
+                StringBuilder ctx = new StringBuilder("Consent for treatments: ");
+                boolean first = true;
+                for (String tid : treatmentIds) {
+                    if (tid == null) continue;
+                    tid = tid.trim();
+                    if (tid.isEmpty()) continue;
+
+                    if (!first) ctx.append(", ");
+                    ctx.append(tid);
+                    first = false;
+                }
+                ctx.append(" (Appointment ").append(appointment.getAppointmentId()).append(")");
 
                 try (PreparedStatement ps = conn.prepareStatement(consentSql)) {
-                    ps.setString(1, consent.getConsentId());
-                    ps.setString(2, consent.getPatientIc());
-                    ps.setString(3, consent.getConsentContext());
-                    ps.setTimestamp(4, new Timestamp(consent.getConsentSigndate().getTime()));
+                    ps.setString(1, consentId);
+                    ps.setString(2, appointment.getPatientIc());
+                    ps.setString(3, ctx.toString());
+                    ps.setTimestamp(4, null); // unsigned first (patient sign later)
+                    ps.setString(5, appointment.getAppointmentId());
                     ps.executeUpdate();
                 }
 
@@ -130,27 +162,18 @@ public class AppointmentDAO {
         }
     }
 
-    private Billing createBilling(Appointment appointment, String treatmentId, String billingMethod) {
-        Billing billing = new Billing();
-        billing.setAppointmentId(appointment.getAppointmentId());
-        billing.setBillingMethod(billingMethod);
-        billing.setBillingStatus("Pending");
-
-        BigDecimal amount = getTreatmentPrice(treatmentId);
-        billing.setBillingAmount(amount);
-
-        billing.setBillingDuedate(appointment.getAppointmentDate());
-        return billing;
+    // ======================================================
+    // ✅ KEEP: OLD ADD APPOINTMENT (SINGLE TREATMENT)
+    // ======================================================
+    public boolean addAppointment(Appointment appointment, String treatmentId,
+                                  String billingMethod, int numInstallments) {
+        String[] ids = new String[]{treatmentId};
+        return addAppointment(appointment, ids, billingMethod, numInstallments);
     }
 
-    private DigitalConsent createDigitalConsent(Appointment appointment, String treatmentId) {
-        DigitalConsent consent = new DigitalConsent();
-        consent.setPatientIc(appointment.getPatientIc());
-        consent.setConsentContext("Consent for treatment " + treatmentId + " (Appointment " + appointment.getAppointmentId() + ")");
-        consent.setConsentSigndate(new java.util.Date());
-        return consent;
-    }
-
+    // =========================
+    // INSTALLMENTS
+    // =========================
     private void createInstallments(Connection conn, Billing billing, int numInstallments) throws SQLException {
         BigDecimal installmentAmount = billing.getBillingAmount()
                 .divide(new BigDecimal(numInstallments), 2, java.math.RoundingMode.HALF_UP);
@@ -235,9 +258,16 @@ public class AppointmentDAO {
         }
     }
 
-    private BigDecimal getTreatmentPrice(String treatmentId) {
-        // TODO: Replace with actual query from TREATMENT table if you have it
-        return new BigDecimal("500.00");
+    private BigDecimal getTreatmentPriceFromDB(Connection conn, String treatmentId) throws SQLException {
+        String sql = "SELECT TREATMENT_PRICE FROM TREATMENT WHERE TRIM(TREATMENT_ID) = ?";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, treatmentId.trim());
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                return rs.getBigDecimal(1) != null ? rs.getBigDecimal(1) : BigDecimal.ZERO;
+            }
+        }
+        return BigDecimal.ZERO;
     }
 
     // =========================
@@ -314,12 +344,12 @@ public class AppointmentDAO {
 
         String sql =
                 "SELECT APPOINTMENT_ID, APPOINTMENT_DATE, APPOINTMENT_TIME, APPOINTMENT_STATUS, REMARKS, PATIENT_IC " +
-                        "FROM APPOINTMENT WHERE APPOINTMENT_ID = ?";
+                        "FROM APPOINTMENT WHERE TRIM(APPOINTMENT_ID) = ?";
 
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
 
-            ps.setString(1, appointmentId);
+            ps.setString(1, appointmentId == null ? "" : appointmentId.trim());
             ResultSet rs = ps.executeQuery();
 
             if (rs.next()) {
@@ -340,16 +370,37 @@ public class AppointmentDAO {
     }
 
     // =========================
-    // UPDATE STATUS
+    // ✅ UPDATE STATUS (OLD SIGNATURE - COMPAT)
     // =========================
     public boolean updateAppointmentStatus(String appointmentId, String status) {
-        String sql = "UPDATE APPOINTMENT SET APPOINTMENT_STATUS = ? WHERE APPOINTMENT_ID = ?";
+        return updateAppointmentStatus(appointmentId, status, null);
+    }
+
+    // =========================
+    // ✅ UPDATE STATUS (NEW) - STORE STAFF_ID WHEN CONFIRMED
+    // =========================
+    public boolean updateAppointmentStatus(String appointmentId, String status, String staffId) {
+
+        String sql;
+
+        if ("Confirmed".equalsIgnoreCase(status)) {
+            sql = "UPDATE APPOINTMENT SET APPOINTMENT_STATUS = ?, STAFF_ID = ? WHERE TRIM(APPOINTMENT_ID) = ?";
+        } else {
+            sql = "UPDATE APPOINTMENT SET APPOINTMENT_STATUS = ? WHERE TRIM(APPOINTMENT_ID) = ?";
+        }
 
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
 
             ps.setString(1, status);
-            ps.setString(2, appointmentId);
+
+            if ("Confirmed".equalsIgnoreCase(status)) {
+                ps.setString(2, staffId); // can be null -> will store NULL
+                ps.setString(3, appointmentId == null ? "" : appointmentId.trim());
+            } else {
+                ps.setString(2, appointmentId == null ? "" : appointmentId.trim());
+            }
+
             return ps.executeUpdate() > 0;
 
         } catch (SQLException e) {
@@ -358,12 +409,12 @@ public class AppointmentDAO {
         }
     }
 
-    // ✅ UPDATE FULL
+    // ✅ UPDATE FULL (date/time/status/remarks)
     public boolean updateAppointment(String appointmentId, java.util.Date date, String time, String status, String remarks) {
         String sql =
                 "UPDATE APPOINTMENT " +
                         "SET APPOINTMENT_DATE=?, APPOINTMENT_TIME=?, APPOINTMENT_STATUS=?, REMARKS=? " +
-                        "WHERE APPOINTMENT_ID=?";
+                        "WHERE TRIM(APPOINTMENT_ID)=?";
 
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -372,13 +423,81 @@ public class AppointmentDAO {
             ps.setString(2, time);
             ps.setString(3, status);
             ps.setString(4, remarks);
-            ps.setString(5, appointmentId);
+            ps.setString(5, appointmentId == null ? "" : appointmentId.trim());
 
             return ps.executeUpdate() > 0;
 
         } catch (SQLException e) {
             e.printStackTrace();
             return false;
+        }
+    }
+
+    // ======================================================
+    // ✅ UPDATE APPOINTMENTTREATMENT (MULTI) - REPLACE ALL
+    // ======================================================
+    public boolean updateAppointmentTreatments(String appointmentId, String[] treatmentIds) {
+
+        if (appointmentId == null || appointmentId.trim().isEmpty()) return false;
+        appointmentId = appointmentId.trim();
+
+        if (treatmentIds == null || treatmentIds.length == 0) return false;
+
+        Connection conn = null;
+        try {
+            conn = DBConnection.getConnection();
+            conn.setAutoCommit(false);
+
+            // get current appointment date
+            java.sql.Date apptDate = null;
+            String dateSql = "SELECT APPOINTMENT_DATE FROM APPOINTMENT WHERE TRIM(APPOINTMENT_ID)=?";
+            try (PreparedStatement ps = conn.prepareStatement(dateSql)) {
+                ps.setString(1, appointmentId);
+                ResultSet rs = ps.executeQuery();
+                if (rs.next()) apptDate = rs.getDate(1);
+            }
+            if (apptDate == null) throw new SQLException("Appointment date not found.");
+
+            // 1) delete old treatments
+            String delSql = "DELETE FROM APPOINTMENTTREATMENT WHERE TRIM(APPOINTMENT_ID)=?";
+            try (PreparedStatement ps = conn.prepareStatement(delSql)) {
+                ps.setString(1, appointmentId);
+                ps.executeUpdate();
+            }
+
+            // 2) insert new treatments
+            String insSql =
+                    "INSERT INTO APPOINTMENTTREATMENT (APPOINTMENT_ID, TREATMENT_ID, APPOINTMENT_DATE) " +
+                            "VALUES (?, ?, ?)";
+
+            try (PreparedStatement ps = conn.prepareStatement(insSql)) {
+                for (String tid : treatmentIds) {
+                    if (tid == null) continue;
+                    tid = tid.trim();
+                    if (tid.isEmpty()) continue;
+
+                    ps.setString(1, appointmentId);
+                    ps.setString(2, tid);
+                    ps.setDate(3, apptDate);
+                    ps.addBatch();
+                }
+                ps.executeBatch();
+            }
+
+            conn.commit();
+            return true;
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+            if (conn != null) {
+                try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
+            }
+            return false;
+
+        } finally {
+            if (conn != null) {
+                try { conn.setAutoCommit(true); conn.close(); } catch (SQLException e) { e.printStackTrace(); }
+            }
         }
     }
 
@@ -393,14 +512,14 @@ public class AppointmentDAO {
             conn.setAutoCommit(false);
 
             String[] sqls = {
-                    "DELETE FROM APPOINTMENTTREATMENT WHERE APPOINTMENT_ID = ?",
-                    "DELETE FROM BILLING WHERE APPOINTMENT_ID = ?",
-                    "DELETE FROM APPOINTMENT WHERE APPOINTMENT_ID = ?"
+                    "DELETE FROM APPOINTMENTTREATMENT WHERE TRIM(APPOINTMENT_ID) = ?",
+                    "DELETE FROM BILLING WHERE TRIM(APPOINTMENT_ID) = ?",
+                    "DELETE FROM APPOINTMENT WHERE TRIM(APPOINTMENT_ID) = ?"
             };
 
             for (String sql : sqls) {
                 try (PreparedStatement ps = conn.prepareStatement(sql)) {
-                    ps.setString(1, appointmentId);
+                    ps.setString(1, appointmentId == null ? "" : appointmentId.trim());
                     ps.executeUpdate();
                 }
             }
@@ -423,27 +542,41 @@ public class AppointmentDAO {
     }
 
     // =========================
-    // APPOINTMENT TREATMENTS
+    // ✅ APPOINTMENT TREATMENTS (WITH DETAILS)
     // =========================
     public List<AppointmentTreatment> getAppointmentTreatments(String appointmentId) {
         List<AppointmentTreatment> treatments = new ArrayList<>();
+        String apptTrim = (appointmentId == null) ? "" : appointmentId.trim();
 
         String sql =
-                "SELECT APPOINTMENT_ID, TREATMENT_ID, APPOINTMENT_DATE " +
-                        "FROM APPOINTMENTTREATMENT WHERE APPOINTMENT_ID = ?";
+                "SELECT TRIM(appt_t.APPOINTMENT_ID) APPOINTMENT_ID, " +
+                        "       TRIM(appt_t.TREATMENT_ID)   TREATMENT_ID, " +
+                        "       appt_t.APPOINTMENT_DATE, " +
+                        "       t.TREATMENT_NAME, t.TREATMENT_DESC, t.TREATMENT_PRICE " +
+                        "FROM APPOINTMENTTREATMENT appt_t " +
+                        "LEFT JOIN TREATMENT t ON TRIM(t.TREATMENT_ID) = TRIM(appt_t.TREATMENT_ID) " +
+                        "WHERE TRIM(appt_t.APPOINTMENT_ID) = ?";
 
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
 
-            ps.setString(1, appointmentId);
+            ps.setString(1, apptTrim);
             ResultSet rs = ps.executeQuery();
 
             while (rs.next()) {
-                AppointmentTreatment t = new AppointmentTreatment();
-                t.setAppointmentId(rs.getString("APPOINTMENT_ID"));
-                t.setTreatmentId(rs.getString("TREATMENT_ID"));
-                t.setAppointmentDate(rs.getDate("APPOINTMENT_DATE"));
-                treatments.add(t);
+                AppointmentTreatment at = new AppointmentTreatment();
+                at.setAppointmentId(rs.getString("APPOINTMENT_ID"));
+                at.setTreatmentId(rs.getString("TREATMENT_ID"));
+                at.setAppointmentDate(rs.getDate("APPOINTMENT_DATE"));
+
+                at.setTreatmentName(rs.getString("TREATMENT_NAME"));
+                at.setTreatmentDesc(rs.getString("TREATMENT_DESC"));
+
+                double price = rs.getDouble("TREATMENT_PRICE");
+                if (rs.wasNull()) price = 0.0;
+                at.setTreatmentPrice(price);
+
+                treatments.add(at);
             }
 
         } catch (SQLException e) {
@@ -471,7 +604,7 @@ public class AppointmentDAO {
             ResultSet rs = ps.executeQuery();
 
             while (rs.next()) {
-                String t = rs.getString("APPOINTMENT_TIME"); // e.g. 14:00:00
+                String t = rs.getString("APPOINTMENT_TIME");
                 if (t != null && t.length() >= 5) t = t.substring(0, 5);
                 times.add(t);
             }

@@ -1,11 +1,15 @@
 package dao;
 
 import beans.*;
+import static dao.DBConnection.getConnection;
 import java.math.BigDecimal;
 import java.sql.*;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class BillingDAO {
     
@@ -212,48 +216,64 @@ public class BillingDAO {
     }
     
     private String getNextInstallmentIdFromDB(Connection conn) throws SQLException {
-        String sql = "SELECT MAX(installment_id) FROM installment";
-        try (Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
-            if (rs.next() && rs.getString(1) != null) {
-                String lastId = rs.getString(1);
-                int num = Integer.parseInt(lastId.substring(1)) + 1;
+    String sql = "SELECT MAX(installment_id) FROM installment";
+    try (Statement stmt = conn.createStatement();
+         ResultSet rs = stmt.executeQuery(sql)) {
+        if (rs.next() && rs.getString(1) != null) {
+            String lastId = rs.getString(1);
+            // Handle case where installment_id might not have 'I' prefix
+            if (lastId.startsWith("I")) {
+                String numericPart = lastId.substring(1);
+                int num = Integer.parseInt(numericPart) + 1;
                 return String.format("I%03d", num);
             } else {
-                return "I001";
+                // If no 'I' prefix, assume it's numeric
+                try {
+                    int num = Integer.parseInt(lastId) + 1;
+                    return String.format("I%03d", num);
+                } catch (NumberFormatException e) {
+                    // If can't parse, start from I001
+                    return "I001";
+                }
             }
+        } else {
+            return "I001";
         }
     }
-    
+}
     // Get all billings
     public List<Billing> getAllBillings() {
-        List<Billing> billings = new ArrayList<>();
-        String sql = "SELECT b.*, a.appointment_date, a.patient_ic, a.appointment_status \n" +
-                    "FROM billing b \n" +
-                    "JOIN appointment a ON b.appointment_id = a.appointment_id \n" +
-                    "WHERE a.appointment_status = 'Confirmed'\n" +
-                    "ORDER BY b.billing_duedate DESC";
-        
-        try (Connection conn = DBConnection.getConnection();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
-            
-            while (rs.next()) {
-                Billing billing = new Billing();
-                billing.setBillingId(rs.getString("billing_id"));
-                billing.setBillingAmount(rs.getBigDecimal("billing_amount"));
-                billing.setBillingDuedate(rs.getDate("billing_duedate"));
-                billing.setBillingStatus(rs.getString("billing_status"));
-                billing.setBillingMethod(rs.getString("billing_method"));
-                billing.setAppointmentId(rs.getString("appointment_id"));
-                billings.add(billing);
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-        return billings;
-    }
+    List<Billing> billings = new ArrayList<>();
     
+    // CORRECTED SQL - removed \n and ensured proper column names
+    String sql = "SELECT b.*, a.appointment_date, a.patient_ic, a.appointment_status " +
+                "FROM billing b " +
+                "JOIN appointment a ON b.appointment_id = a.appointment_id " +
+                "WHERE a.appointment_status = 'Confirmed' " +
+                "ORDER BY b.billing_duedate DESC";
+    
+    try (Connection conn = DBConnection.getConnection();
+         PreparedStatement ps = conn.prepareStatement(sql);
+         ResultSet rs = ps.executeQuery()) {
+        
+        while (rs.next()) {
+            Billing billing = new Billing();
+            billing.setBillingId(rs.getString("billing_id"));
+            billing.setBillingAmount(rs.getBigDecimal("billing_amount"));
+            billing.setBillingDuedate(rs.getDate("billing_duedate"));
+            billing.setBillingStatus(rs.getString("billing_status"));
+            billing.setBillingMethod(rs.getString("billing_method"));
+            billing.setAppointmentId(rs.getString("appointment_id"));
+            billings.add(billing);
+        }
+    } catch (SQLException e) {
+        e.printStackTrace();
+        // Log the full error
+        System.err.println("Error in getAllBillings: " + e.getMessage());
+        System.err.println("SQL: " + sql);
+    }
+    return billings;
+}
     // Get billing by ID
     public Billing getBillingById(String billingId) {
         Billing billing = null;
@@ -353,56 +373,87 @@ public class BillingDAO {
         }
     }
     
-    // Update billing method
-    // Update billing method
-public boolean updateBillingMethod(String billingId, String billingMethod, int numInstallments) {
+ public boolean updateBillingMethod(String billingId, String billingMethod, int numInstallments) {
     Connection conn = null;
     try {
         conn = DBConnection.getConnection();
         conn.setAutoCommit(false);
         
-        // Get billing details within the same transaction
-        Billing billing = getBillingByIdWithinTransaction(conn, billingId);
-        if (billing == null) {
-            throw new SQLException("Billing not found: " + billingId);
+        // First get billing details
+        String selectSql = "SELECT billing_amount, billing_duedate FROM billing WHERE billing_id = ?";
+        BigDecimal billingAmount = null;
+        java.util.Date billingDueDate = null;
+        
+        try (PreparedStatement ps = conn.prepareStatement(selectSql)) {
+            ps.setString(1, billingId);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                billingAmount = rs.getBigDecimal("billing_amount");
+                billingDueDate = rs.getDate("billing_duedate");
+            } else {
+                throw new SQLException("Billing not found: " + billingId);
+            }
         }
         
         // Update billing method
-        String sql = "UPDATE billing SET billing_method = ? WHERE billing_id = ?";
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+        String updateSql = "UPDATE billing SET billing_method = ? WHERE billing_id = ?";
+        try (PreparedStatement ps = conn.prepareStatement(updateSql)) {
             ps.setString(1, billingMethod);
             ps.setString(2, billingId);
             ps.executeUpdate();
         }
         
-        // Update billing object with new method
-        billing.setBillingMethod(billingMethod);
-        
         // If changing to Installment, create installments
         if ("Installment".equalsIgnoreCase(billingMethod)) {
-            // Delete existing installments if any
+            // Delete existing installments
             String deleteSql = "DELETE FROM installment WHERE billing_id = ?";
             try (PreparedStatement ps = conn.prepareStatement(deleteSql)) {
                 ps.setString(1, billingId);
                 ps.executeUpdate();
             }
             
-            // Update due date to 30 days from now for installment billing
-            java.util.Calendar cal = java.util.Calendar.getInstance();
-            cal.setTime(new java.util.Date());
-            cal.add(java.util.Calendar.DAY_OF_MONTH, 30);
-            billing.setBillingDuedate(cal.getTime());
+            // Calculate installment amount
+            BigDecimal installmentAmount = billingAmount.divide(
+                new BigDecimal(numInstallments), 2, java.math.RoundingMode.HALF_UP);
             
-            // Update billing due date in database
-            String updateDateSql = "UPDATE billing SET billing_duedate = ? WHERE billing_id = ?";
-            try (PreparedStatement ps = conn.prepareStatement(updateDateSql)) {
-                ps.setDate(1, new java.sql.Date(billing.getBillingDuedate().getTime()));
-                ps.setString(2, billingId);
-                ps.executeUpdate();
+            // Get next installment ID
+            String nextInstallmentId = getNextInstallmentIdFromDB(conn);
+            
+            // Create default installment dates (monthly from today)
+            java.util.Calendar cal = java.util.Calendar.getInstance();
+            if (billingDueDate != null) {
+                cal.setTime(billingDueDate);
             }
             
-            // Create new installments with correct due date
-            createInstallments(conn, billing, numInstallments);
+            // Create installments
+            for (int i = 1; i <= numInstallments; i++) {
+                String installmentId = generateInstallmentId(nextInstallmentId, i);
+                
+                String insertSql = "INSERT INTO installment " +
+                                  "(installment_id, numofinstallment, payment_amount, " +
+                                  "paid_amount, remaining_amount, payment_status, payment_date, billing_id) " +
+                                  "VALUES (?, ?, ?, 0, ?, 'Pending', ?, ?)";
+                try (PreparedStatement ps = conn.prepareStatement(insertSql)) {
+                    ps.setString(1, installmentId);
+                    ps.setInt(2, numInstallments);
+                    ps.setBigDecimal(3, installmentAmount);
+                    ps.setBigDecimal(4, installmentAmount); // remaining amount equals payment amount initially
+                    
+                    // Set payment date (first installment due immediately, others monthly)
+                    if (i == 1) {
+                        // First installment due now
+                        cal.setTime(new java.util.Date());
+                    } else {
+                        // Subsequent installments monthly
+                        cal.add(java.util.Calendar.MONTH, 1);
+                    }
+                    
+                    java.sql.Date paymentDate = new java.sql.Date(cal.getTime().getTime());
+                    ps.setDate(5, paymentDate);
+                    ps.setString(6, billingId);
+                    ps.executeUpdate();
+                }
+            }
         }
         
         conn.commit();
@@ -416,11 +467,15 @@ public boolean updateBillingMethod(String billingId, String billingMethod, int n
         return false;
     } finally {
         if (conn != null) {
-            try { conn.setAutoCommit(true); conn.close(); } catch (SQLException e) { e.printStackTrace(); }
+            try { 
+                conn.setAutoCommit(true); 
+                conn.close(); 
+            } catch (SQLException e) { 
+                e.printStackTrace(); 
+            }
         }
     }
 }
-
 // Helper method to get billing within transaction
 private Billing getBillingByIdWithinTransaction(Connection conn, String billingId) throws SQLException {
     String sql = "SELECT * FROM billing WHERE billing_id = ?";
@@ -472,70 +527,70 @@ private Billing getBillingByIdWithinTransaction(Connection conn, String billingI
     }
     
     // Make installment payment
-    public boolean makeInstallmentPayment(String installmentId, BigDecimal paymentAmount) {
-        Connection conn = null;
-        try {
-            conn = DBConnection.getConnection();
-            conn.setAutoCommit(false);
-            
-            // Get current installment
-            String selectSql = "SELECT * FROM installment WHERE installment_id = ?";
-            Installment installment = null;
-            try (PreparedStatement ps = conn.prepareStatement(selectSql)) {
-                ps.setString(1, installmentId);
-                ResultSet rs = ps.executeQuery();
-                
-                if (rs.next()) {
-                    installment = new Installment();
-                    installment.setInstallmentId(rs.getString("installment_id"));
-                    installment.setPaymentAmount(rs.getBigDecimal("payment_amount"));
-                    installment.setPaidAmount(rs.getBigDecimal("paid_amount"));
-                    installment.setRemainingAmount(rs.getBigDecimal("remaining_amount"));
-                    installment.setPaymentStatus(rs.getString("payment_status"));
-                    installment.setBillingId(rs.getString("billing_id"));
-                }
-            }
-            
-            if (installment == null) {
-                throw new SQLException("Installment not found: " + installmentId);
-            }
-            
-            // Calculate new paid amount and remaining amount
-            BigDecimal newPaidAmount = installment.getPaidAmount().add(paymentAmount);
-            BigDecimal newRemainingAmount = installment.getPaymentAmount().subtract(newPaidAmount);
-            
-            // Update installment
-            String updateSql = "UPDATE installment SET paid_amount = ?, remaining_amount = ?, " +
-                              "payment_status = ? WHERE installment_id = ?";
-            try (PreparedStatement ps = conn.prepareStatement(updateSql)) {
-                ps.setBigDecimal(1, newPaidAmount);
-                ps.setBigDecimal(2, newRemainingAmount);
-                
-                // Update payment status
-                String newStatus = newRemainingAmount.compareTo(BigDecimal.ZERO) <= 0 ? "Paid" : "Partial";
-                ps.setString(3, newStatus);
-                ps.setString(4, installmentId);
-                ps.executeUpdate();
-            }
-            
-            // Check if all installments for this billing are paid
-            checkAndUpdateBillingStatus(conn, installment.getBillingId());
-            
-            conn.commit();
-            return true;
-            
-        } catch (SQLException e) {
-            e.printStackTrace();
-            if (conn != null) {
-                try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
-            }
-            return false;
-        } finally {
-            if (conn != null) {
-                try { conn.setAutoCommit(true); conn.close(); } catch (SQLException e) { e.printStackTrace(); }
-            }
-        }
-    }
+//    public boolean makeInstallmentPayment(String installmentId, BigDecimal paymentAmount) {
+//        Connection conn = null;
+//        try {
+//            conn = DBConnection.getConnection();
+//            conn.setAutoCommit(false);
+//            
+//            // Get current installment
+//            String selectSql = "SELECT * FROM installment WHERE installment_id = ?";
+//            Installment installment = null;
+//            try (PreparedStatement ps = conn.prepareStatement(selectSql)) {
+//                ps.setString(1, installmentId);
+//                ResultSet rs = ps.executeQuery();
+//                
+//                if (rs.next()) {
+//                    installment = new Installment();
+//                    installment.setInstallmentId(rs.getString("installment_id"));
+//                    installment.setPaymentAmount(rs.getBigDecimal("payment_amount"));
+//                    installment.setPaidAmount(rs.getBigDecimal("paid_amount"));
+//                    installment.setRemainingAmount(rs.getBigDecimal("remaining_amount"));
+//                    installment.setPaymentStatus(rs.getString("payment_status"));
+//                    installment.setBillingId(rs.getString("billing_id"));
+//                }
+//            }
+//            
+//            if (installment == null) {
+//                throw new SQLException("Installment not found: " + installmentId);
+//            }
+//            
+//            // Calculate new paid amount and remaining amount
+//            BigDecimal newPaidAmount = installment.getPaidAmount().add(paymentAmount);
+//            BigDecimal newRemainingAmount = installment.getPaymentAmount().subtract(newPaidAmount);
+//            
+//            // Update installment
+//            String updateSql = "UPDATE installment SET paid_amount = ?, remaining_amount = ?, " +
+//                              "payment_status = ? WHERE installment_id = ?";
+//            try (PreparedStatement ps = conn.prepareStatement(updateSql)) {
+//                ps.setBigDecimal(1, newPaidAmount);
+//                ps.setBigDecimal(2, newRemainingAmount);
+//                
+//                // Update payment status
+//                String newStatus = newRemainingAmount.compareTo(BigDecimal.ZERO) <= 0 ? "Paid" : "Partial";
+//                ps.setString(3, newStatus);
+//                ps.setString(4, installmentId);
+//                ps.executeUpdate();
+//            }
+//            
+//            // Check if all installments for this billing are paid
+//            checkAndUpdateBillingStatus(conn, installment.getBillingId());
+//            
+//            conn.commit();
+//            return true;
+//            
+//        } catch (SQLException e) {
+//            e.printStackTrace();
+//            if (conn != null) {
+//                try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
+//            }
+//            return false;
+//        } finally {
+//            if (conn != null) {
+//                try { conn.setAutoCommit(true); conn.close(); } catch (SQLException e) { e.printStackTrace(); }
+//            }
+//        }
+//    }
     
     private void checkAndUpdateBillingStatus(Connection conn, String billingId) throws SQLException {
         // Check if all installments are paid
@@ -599,4 +654,220 @@ private Billing getBillingByIdWithinTransaction(Connection conn, String billingI
             }
         }
     }
+    // Make installment payment with date validation
+public boolean makeInstallmentPayment(String installmentId, BigDecimal paymentAmount) {
+    Connection conn = null;
+    try {
+        conn = DBConnection.getConnection();
+        conn.setAutoCommit(false);
+        
+        // Get current installment
+        String selectSql = "SELECT * FROM installment WHERE installment_id = ?";
+        Installment installment = null;
+        try (PreparedStatement ps = conn.prepareStatement(selectSql)) {
+            ps.setString(1, installmentId);
+            ResultSet rs = ps.executeQuery();
+            
+            if (rs.next()) {
+                installment = new Installment();
+                installment.setInstallmentId(rs.getString("installment_id"));
+                installment.setPaymentAmount(rs.getBigDecimal("payment_amount"));
+                installment.setPaidAmount(rs.getBigDecimal("paid_amount"));
+                installment.setRemainingAmount(rs.getBigDecimal("remaining_amount"));
+                installment.setPaymentStatus(rs.getString("payment_status"));
+                installment.setPaymentDate(rs.getString("payment_date"));
+                installment.setBillingId(rs.getString("billing_id"));
+            }
+        }
+        
+        if (installment == null) {
+            throw new SQLException("Installment not found: " + installmentId);
+        }
+        
+        // Check if payment date has passed
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+        java.util.Date dueDate = sdf.parse(installment.getPaymentDate());
+        java.util.Date today = new java.util.Date();
+        
+        // Update installment with payment
+        BigDecimal newPaidAmount = installment.getPaidAmount().add(paymentAmount);
+        BigDecimal newRemainingAmount = installment.getPaymentAmount().subtract(newPaidAmount);
+        String newStatus = newRemainingAmount.compareTo(BigDecimal.ZERO) <= 0 ? "Paid" : "Partial";
+        
+        // If payment is made after due date, mark as overdue
+        if (today.after(dueDate) && !"Paid".equals(newStatus)) {
+            newStatus = "Overdue";
+        }
+        
+        String updateSql = "UPDATE installment SET paid_amount = ?, remaining_amount = ?, " +
+                          "payment_status = ?, payment_date = ? WHERE installment_id = ?";
+        try (PreparedStatement ps = conn.prepareStatement(updateSql)) {
+            ps.setBigDecimal(1, newPaidAmount);
+            ps.setBigDecimal(2, newRemainingAmount);
+            ps.setString(3, newStatus);
+            ps.setString(4, installment.getPaymentDate());
+            ps.setString(5, installmentId);
+            ps.executeUpdate();
+        }
+        
+        // Update billing status if all installments are paid
+        updateBillingStatusFromInstallments(conn, installment.getBillingId());
+        
+        conn.commit();
+        return true;
+        
+    } catch (Exception e) {
+        e.printStackTrace();
+        if (conn != null) {
+            try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
+        }
+        return false;
+    } finally {
+        if (conn != null) {
+            try { 
+                conn.setAutoCommit(true); 
+                conn.close(); 
+            } catch (SQLException e) { 
+                e.printStackTrace(); 
+            }
+        }
+    }
+}
+
+// Update billing status based on installments
+private void updateBillingStatusFromInstallments(Connection conn, String billingId) throws SQLException {
+    String sql = "SELECT COUNT(*) as total, " +
+                "SUM(CASE WHEN payment_status = 'Paid' THEN 1 ELSE 0 END) as paid, " +
+                "SUM(CASE WHEN payment_status = 'Overdue' THEN 1 ELSE 0 END) as overdue " +
+                "FROM installment WHERE billing_id = ?";
+    
+    try (PreparedStatement ps = conn.prepareStatement(sql)) {
+        ps.setString(1, billingId);
+        ResultSet rs = ps.executeQuery();
+        
+        if (rs.next()) {
+            int total = rs.getInt("total");
+            int paid = rs.getInt("paid");
+            int overdue = rs.getInt("overdue");
+            
+            String newStatus;
+            if (total == paid) {
+                newStatus = "Paid";
+            } else if (overdue > 0) {
+                newStatus = "Overdue";
+            } else {
+                newStatus = "Pending";
+            }
+            
+            String updateSql = "UPDATE billing SET billing_status = ? WHERE billing_id = ?";
+            try (PreparedStatement updatePs = conn.prepareStatement(updateSql)) {
+                updatePs.setString(1, newStatus);
+                updatePs.setString(2, billingId);
+                updatePs.executeUpdate();
+            }
+        }
+    }
+}
+
+// Add these methods to your existing BillingDAO class:
+
+// Get billings by patient IC
+public List<Billing> getBillingsByPatientIc(String patientIc) {
+    List<Billing> billings = new ArrayList<>();
+    String sql = "SELECT b.* FROM BILLING b " +
+                 "JOIN APPOINTMENT a ON b.APPOINTMENT_ID = a.APPOINTMENT_ID " +
+                 "WHERE a.PATIENT_IC = ? " +
+                 "ORDER BY b.BILLING_DUEDATE DESC";
+    try (Connection conn = getConnection();
+         PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        pstmt.setString(1, patientIc);
+        ResultSet rs = pstmt.executeQuery();
+        while (rs.next()) {
+            Billing billing = extractBillingFromResultSet(rs);
+            billings.add(billing);
+        }
+    } catch (Exception e) {
+        e.printStackTrace();
+        System.err.println("Error in getBillingsByPatientIc for IC: " + patientIc);
+        System.err.println("Error: " + e.getMessage());
+    }
+    return billings;
+}
+// Check if billing belongs to patient
+public boolean isBillingBelongsToPatient(String billingId, String patientIc) {
+    String sql = "SELECT COUNT(*) FROM BILLING b " +
+                 "JOIN APPOINTMENT a ON b.APPOINTMENT_ID = a.APPOINTMENT_ID " +
+                 "WHERE b.BILLING_ID = ? AND a.PATIENT_IC = ?";
+    try (Connection conn = getConnection();
+         PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        pstmt.setString(1, billingId);
+        pstmt.setString(2, patientIc);
+        ResultSet rs = pstmt.executeQuery();
+        if (rs.next()) {
+            return rs.getInt(1) > 0;
+        }
+    } catch (Exception e) {
+        e.printStackTrace();
+    }
+    return false;
+}
+
+public String getAppointmentDateByBillingId(String billingId) {
+    String sql = "SELECT a.APPOINTMENT_DATE FROM APPOINTMENT a " +
+                 "JOIN BILLING b ON a.APPOINTMENT_ID = b.APPOINTMENT_ID " +
+                 "WHERE b.BILLING_ID = ?";
+    try (Connection conn = getConnection();
+         PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        pstmt.setString(1, billingId);
+        ResultSet rs = pstmt.executeQuery();
+        if (rs.next()) {
+            return rs.getString("APPOINTMENT_DATE");
+        }
+    } catch (Exception e) {
+        e.printStackTrace();
+    }
+    return null;
+}
+// Get patient's billing summary
+public Map<String, BigDecimal> getPatientBillingSummary(String patientIc) {
+    Map<String, BigDecimal> summary = new HashMap<>();
+    
+    String sql = "SELECT " +
+                "SUM(b.billing_amount) as total_amount, " +
+                "SUM(CASE WHEN b.billing_status = 'Paid' THEN b.billing_amount ELSE 0 END) as paid_amount, " +
+                "SUM(CASE WHEN b.billing_status != 'Paid' THEN b.billing_amount ELSE 0 END) as pending_amount " +
+                "FROM billing b " +
+                "JOIN appointment a ON b.appointment_id = a.appointment_id " +
+                "WHERE a.patient_ic = ?";
+    
+    try (Connection conn = DBConnection.getConnection();
+         PreparedStatement ps = conn.prepareStatement(sql)) {
+        
+        ps.setString(1, patientIc);
+        ResultSet rs = ps.executeQuery();
+        
+        if (rs.next()) {
+            summary.put("total", rs.getBigDecimal("total_amount") != null ? 
+                       rs.getBigDecimal("total_amount") : BigDecimal.ZERO);
+            summary.put("paid", rs.getBigDecimal("paid_amount") != null ? 
+                       rs.getBigDecimal("paid_amount") : BigDecimal.ZERO);
+            summary.put("pending", rs.getBigDecimal("pending_amount") != null ? 
+                       rs.getBigDecimal("pending_amount") : BigDecimal.ZERO);
+        }
+    } catch (SQLException e) {
+        e.printStackTrace();
+    }
+    return summary;
+}
+// Helper method to extract Billing from ResultSet
+private Billing extractBillingFromResultSet(ResultSet rs) throws SQLException {
+    Billing billing = new Billing();
+    billing.setBillingId(rs.getString("BILLING_ID"));
+    billing.setBillingAmount(rs.getBigDecimal("BILLING_AMOUNT"));
+    billing.setBillingDuedate(rs.getDate("BILLING_DUEDATE"));
+    billing.setBillingStatus(rs.getString("BILLING_STATUS"));
+    billing.setBillingMethod(rs.getString("BILLING_METHOD"));
+    billing.setAppointmentId(rs.getString("APPOINTMENT_ID"));
+    return billing;
+}
 }

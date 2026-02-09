@@ -226,24 +226,20 @@ body{
 
     <h6>Patient Dashboard</h6>
 
-    <a class="side-link active"
-       href="<%=request.getContextPath()%>/patient/patientDashboard.jsp">
-        <i class="fa-solid fa-chart-line"></i> Dashboard
+    <a class="side-link active" href="<%=request.getContextPath()%>/patient/patientDashboard.jsp">
+    <i class="fa-solid fa-chart-line"></i> Dashboard
     </a>
 
-    <a class="side-link"
-       href="<%=request.getContextPath()%>/AppointmentServlet?action=list">
-        <i class="fa-solid fa-calendar-check"></i> View Appointment
+    <a class="side-link" href="<%=request.getContextPath()%>/AppointmentServlet?action=list">
+    <i class="fa-solid fa-calendar-check"></i> View Appointment
     </a>
 
-    <a class="side-link"
-       href="<%=request.getContextPath()%>/billing/viewBilling.jsp">
-        <i class="fa-solid fa-file-invoice-dollar"></i> Billing
+    <a class="side-link" href="<%=request.getContextPath()%>/PatientBillingServlet?action=list"">
+    <i class="fa-solid fa-file-invoice-dollar"></i> My Billings
     </a>
 
-    <a class="side-link"
-       href="<%=request.getContextPath()%>/ProfileServlet">
-        <i class="fa-solid fa-user"></i> My Profile
+    <a class="side-link" href="<%=request.getContextPath()%>/ProfileServlet">
+    <i class="fa-solid fa-user"></i> My Profile
     </a>
 
 </div>
