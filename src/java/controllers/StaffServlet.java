@@ -185,18 +185,22 @@ public class StaffServlet extends HttpServlet {
             boolean success = staffDAO.addStaff(staff);
 
             if (success) {
-                request.setAttribute("message", "Staff ID for " + staffName.trim() + " is " + generatedId);
-                request.getRequestDispatcher("/staff/addStaff.jsp").forward(request, response);
-            } else {
-                request.setAttribute("error", "Failed to add staff.");
-                request.getRequestDispatcher("/staff/addStaff.jsp").forward(request, response);
-            }
+            // ✅ redirect so URL becomes ?popup=added (your JSP modal checks this)
+            response.sendRedirect(request.getContextPath() + "/staff/addStaff.jsp?popup=added");
+            return;
+        } else {
+            request.setAttribute("error", "Failed to add staff.");
+            request.getRequestDispatcher("/staff/addStaff.jsp").forward(request, response);
+            return;
+        }
+
 
         } catch (Exception e) {
             request.setAttribute("error", e.getMessage());
             request.getRequestDispatcher("/staff/addStaff.jsp").forward(request, response);
         }
     }
+    
     private void viewStaff(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
 
@@ -223,14 +227,19 @@ public class StaffServlet extends HttpServlet {
     private void updateStaff(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
 
-        try {
-            String staffId = request.getParameter("staff_id");
-            String staffName = request.getParameter("staff_name");
-            String staffEmail = request.getParameter("staff_email");
-            String staffPhone = request.getParameter("staff_phonenum");
-            String staffRole = request.getParameter("staff_role");
-            String newPassword = request.getParameter("staff_password");
+        request.setCharacterEncoding("UTF-8");
 
+        String staffId = request.getParameter("staff_id");
+        String staffName = request.getParameter("staff_name");
+        String staffEmail = request.getParameter("staff_email");
+        String staffPhone = request.getParameter("staff_phonenum");
+        String staffRole = request.getParameter("staff_role");
+        String otherRole = request.getParameter("staff_role_other");
+        String newPassword = request.getParameter("staff_password");
+        String confirmPassword = request.getParameter("confirm_password");
+
+        try {
+            // ===== Basic validation =====
             if (staffId == null || staffId.trim().isEmpty()) {
                 throw new Exception("Staff ID is required.");
             }
@@ -242,33 +251,117 @@ public class StaffServlet extends HttpServlet {
                 throw new Exception("Please fill in all required fields.");
             }
 
-            Staff staff = new Staff();
-            staff.setStaffId(staffId.trim());
-            staff.setStaffName(staffName.trim());
-            staff.setStaffEmail(staffEmail.trim());
-            staff.setStaffPhonenum(staffPhone.trim());
-            staff.setStaffRole(staffRole.trim());
+            staffId = staffId.trim();
+            staffName = staffName.trim();
+            staffEmail = staffEmail.trim();
+            staffPhone = staffPhone.trim();
+            staffRole = staffRole.trim();
 
-            if (newPassword != null && !newPassword.trim().isEmpty()) {
-                staff.setStaffPassword(newPassword.trim());
+            // Email format check
+            if (!staffEmail.matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")) {
+                request.setAttribute("error", "Invalid email format. Example: name@gmail.com");
+                
+                // Get fresh staff data for redisplay
+                Staff currentStaff = staffDAO.getStaffById(staffId);
+                request.setAttribute("staff", currentStaff);
+                request.getRequestDispatcher("/staff/editStaff.jsp").forward(request, response);
+                return;
             }
+
+            // Role = Other
+            if ("Other".equalsIgnoreCase(staffRole)) {
+                if (otherRole == null || otherRole.trim().isEmpty()) {
+                    request.setAttribute("error", "Please specify the staff role.");
+                    
+                    // Get fresh staff data for redisplay
+                    Staff currentStaff = staffDAO.getStaffById(staffId);
+                    request.setAttribute("staff", currentStaff);
+                    request.getRequestDispatcher("/staff/editStaff.jsp").forward(request, response);
+                    return;
+                }
+                staffRole = otherRole.trim();
+            }
+
+            // ===== Create staff object =====
+            Staff staff = new Staff();
+            staff.setStaffId(staffId);
+            staff.setStaffName(staffName);
+            staff.setStaffEmail(staffEmail);
+            staff.setStaffPhonenum(staffPhone);
+            staff.setStaffRole(staffRole);
+
+            // ===== Password logic (ONLY if user typed password) =====
+            if (newPassword != null) newPassword = newPassword.trim();
+
+            if (newPassword != null && !newPassword.isEmpty()) {
+
+                if (newPassword.length() < 6) {
+                    request.setAttribute("error", "Password must be at least 6 characters.");
+                    
+                    // Get fresh staff data for redisplay
+                    Staff currentStaff = staffDAO.getStaffById(staffId);
+                    request.setAttribute("staff", currentStaff);
+                    request.getRequestDispatcher("/staff/editStaff.jsp").forward(request, response);
+                    return;
+                }
+
+                if (confirmPassword == null || confirmPassword.trim().isEmpty()) {
+                    request.setAttribute("error", "Please confirm the new password.");
+                    
+                    // Get fresh staff data for redisplay
+                    Staff currentStaff = staffDAO.getStaffById(staffId);
+                    request.setAttribute("staff", currentStaff);
+                    request.getRequestDispatcher("/staff/editStaff.jsp").forward(request, response);
+                    return;
+                }
+
+                if (!newPassword.equals(confirmPassword.trim())) {
+                    request.setAttribute("error", "Password and Confirm Password do not match.");
+                    
+                    // Get fresh staff data for redisplay
+                    Staff currentStaff = staffDAO.getStaffById(staffId);
+                    request.setAttribute("staff", currentStaff);
+                    request.getRequestDispatcher("/staff/editStaff.jsp").forward(request, response);
+                    return;
+                }
+
+                // ✅ only set password when typed
+                staff.setStaffPassword(newPassword);
+            }
+            // else: do NOT set password at all (keep null) → DAO must not update password
 
             boolean success = staffDAO.updateStaff(staff);
 
             if (success) {
-                request.setAttribute("message", "Staff updated successfully!");
-                listStaff(request, response);
+                // Get UPDATED staff data from database
+                Staff updatedStaff = staffDAO.getStaffById(staffId);
+                request.setAttribute("staff", updatedStaff);
+                request.setAttribute("success", "Staff information has been updated successfully!");
+                
+                // Forward to edit page with updated data and success message
+                RequestDispatcher dispatcher = request.getRequestDispatcher("/staff/editStaff.jsp");
+                dispatcher.forward(request, response);
             } else {
                 request.setAttribute("error", "Update failed. Please try again.");
-                Staff s = staffDAO.getStaffById(staffId);
-                request.setAttribute("staff", s);
+                
+                // Get current staff data for redisplay
+                Staff currentStaff = staffDAO.getStaffById(staffId);
+                request.setAttribute("staff", currentStaff);
                 request.getRequestDispatcher("/staff/editStaff.jsp").forward(request, response);
             }
 
         } catch (Exception e) {
             request.setAttribute("error", "Invalid data: " + e.getMessage());
-            Staff s = staffDAO.getStaffById(request.getParameter("staff_id"));
-            request.setAttribute("staff", s);
+            
+            try {
+                // Get current staff data for redisplay
+                Staff currentStaff = staffDAO.getStaffById(staffId);
+                request.setAttribute("staff", currentStaff);
+            } catch (Exception ex) {
+                // If we can't get staff, redirect to list
+                listStaff(request, response);
+                return;
+            }
             request.getRequestDispatcher("/staff/editStaff.jsp").forward(request, response);
         }
     }

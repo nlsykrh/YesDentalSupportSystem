@@ -7,6 +7,16 @@
         return;
     }
 
+    // Logged-in staff (for topbar chip)
+    String staffNameSess = (String) session.getAttribute("staffName");
+    String staffIdSess   = (String) session.getAttribute("staffId");
+    String staffRoleSess = (String) session.getAttribute("staffRole");
+
+    if (staffNameSess == null || staffNameSess.trim().isEmpty()) staffNameSess = "Staff";
+    if (staffIdSess == null || staffIdSess.trim().isEmpty()) staffIdSess = "-";
+    if (staffRoleSess == null || staffRoleSess.trim().isEmpty()) staffRoleSess = "Staff";
+
+    // Viewed staff details
     Staff staff = (Staff) request.getAttribute("staff");
     if (staff == null) {
         response.sendRedirect(request.getContextPath() + "/StaffServlet?action=list");
@@ -35,19 +45,23 @@
             --green-deep:#264232;
             --gold-soft:#d7d1a6;
         }
+
         body{
             overflow:hidden;
             margin:0;
             min-height:100vh;
             background:url("<%=request.getContextPath()%>/images/Background.png") no-repeat center center fixed;
             background-size:cover;
-            font-family:"Segoe UI",sans-serif;
+            font-family:"Segoe UI", sans-serif;
         }
+
         .overlay{
             min-height:100vh;
-            background:rgba(255,255,255,.38);
+            background:rgba(255,255,255,0.38);
             backdrop-filter:blur(1.5px);
         }
+
+        /* ===== TOP BAR (align with dashboard) ===== */
         .top-nav{
             display:flex;
             align-items:center;
@@ -59,12 +73,17 @@
             align-items:center;
             gap:12px;
         }
-        .brand img{height:48px;}
+        .brand img{ height:48px; }
         .clinic-title{
             font-size:26px;
             font-weight:700;
             color:var(--green-dark);
-            font-family:"Times New Roman",serif;
+            font-family:"Times New Roman", serif;
+        }
+        .top-right{
+            display:flex;
+            align-items:center;
+            gap:12px;
         }
         .user-chip{
             display:inline-flex;
@@ -76,7 +95,27 @@
             font-size:13px;
             color:#2f3a34;
         }
+        .logout-btn{
+            display:inline-flex;
+            align-items:center;
+            gap:6px;
+            padding:6px 16px;
+            border-radius:999px;
+            background:#c96a6a;
+            color:#fff;
+            font-size:13px;
+            font-weight:600;
+            text-decoration:none;
+            box-shadow:0 6px 14px rgba(0,0,0,0.18);
+            transition:all .2s ease;
+            border:none;
+        }
+        .logout-btn:hover{
+            background:#b95a5a;
+            transform:translateY(-1px);
+        }
 
+        /* ===== LAYOUT ===== */
         .layout-wrap{
             width:100%;
             padding:30px 60px 40px;
@@ -92,6 +131,8 @@
             height:100%;
             align-items:stretch;
         }
+
+        /* ===== SIDEBAR (align with dashboard) ===== */
         .sidebar{
             background:var(--green-deep);
             color:#fff;
@@ -105,32 +146,42 @@
             margin-bottom:12px;
             color:#fff;
             padding-bottom:10px;
-            border-bottom:1px solid rgba(255,255,255,.25);
+            border-bottom:1px solid rgba(255,255,255,0.25);
         }
         .side-link{
-            display:block;
+            display:flex;
+            align-items:center;
+            gap:10px;
             color:#fff;
-            padding:7px 10px;
-            border-radius:8px;
+            padding:9px 10px;
+            border-radius:10px;
             text-decoration:none;
             font-size:14px;
             margin-bottom:6px;
         }
-        .side-link.active,.side-link:hover{
-            background:rgba(255,255,255,.14);
+        .side-link i{
+            width:18px;
+            text-align:center;
+            opacity:0.95;
+        }
+        .side-link:hover,
+        .side-link.active{
+            background:rgba(255,255,255,0.14);
             color:#ffe69b;
         }
 
+        /* ===== CONTENT CARD ===== */
         .card-panel{
-            background:rgba(255,255,255,.92);
+            background:rgba(255,255,255,0.92);
             border-radius:16px;
             padding:22px 24px 26px;
-            box-shadow:0 14px 30px rgba(0,0,0,.1);
+            box-shadow:0 14px 30px rgba(0,0,0,0.1);
             height:100%;
             display:flex;
             flex-direction:column;
             overflow:hidden;
         }
+
         .panel-header{
             display:flex;
             justify-content:space-between;
@@ -138,29 +189,33 @@
             gap:12px;
             margin-bottom:12px;
         }
-        .panel-header h4{
+        .panel-title{
             margin:0;
             font-weight:800;
             color:#2f2f2f;
+            display:flex;
+            align-items:center;
+            gap:10px;
         }
-        .role-pill{
-            padding:6px 12px;
-            border-radius:999px;
-            font-size:12px;
-            background:#e7f4ec;
-            color:#2a6b48;
-            display:inline-block;
-            font-weight:800;
+        .panel-sub{
+            margin:0;
+            color:#666;
+            font-size:13px;
         }
-
-        .details-wrap{
-            border:1px solid #d9d9d9;
-            border-radius:10px;
-            background:#fff;
+        .content-scroll{
             flex:1;
             min-height:0;
             overflow:auto;
-            padding:18px;
+            padding-right:4px;
+        }
+
+        /* ===== DETAILS CARD ===== */
+        .info-card{
+            background:#fff;
+            border:1px solid #e6e6e6;
+            border-radius:16px;
+            padding:16px;
+            box-shadow:0 10px 18px rgba(0,0,0,0.06);
         }
 
         .info-grid{
@@ -168,10 +223,10 @@
             grid-template-columns: 1fr 1fr;
             gap:14px;
         }
-        .info-card{
-            border:1px solid #e6e6e6;
-            border-radius:12px;
-            padding:14px 14px;
+        .field{
+            border:1px solid #efefef;
+            border-radius:14px;
+            padding:14px;
             background:#fff;
         }
         .label{
@@ -187,6 +242,16 @@
             font-weight:700;
             color:#2f2f2f;
             word-break:break-word;
+        }
+
+        .role-pill{
+            padding:6px 12px;
+            border-radius:999px;
+            font-size:12px;
+            background:#e7f4ec;
+            color:#2a6b48;
+            display:inline-block;
+            font-weight:800;
         }
 
         .btn-row{
@@ -217,76 +282,126 @@
         }
 
         @media(max-width:992px){
-            .layout{grid-template-columns:1fr;}
-            .layout-wrap{padding:20px;}
-            .top-nav{padding:18px 24px 8px;flex-wrap:wrap;gap:10px;}
-            .info-grid{grid-template-columns:1fr;}
+            body{ overflow:auto; }
+            .layout{ grid-template-columns:1fr; }
+            .layout-wrap{ padding:20px; height:auto; overflow:visible; }
+            .top-nav{
+                padding:18px 24px 8px;
+                flex-wrap:wrap;
+                gap:10px;
+            }
+            .card-panel{ height:auto; overflow:visible; }
+            .content-scroll{ overflow:visible; }
+            .info-grid{ grid-template-columns:1fr; }
         }
     </style>
 </head>
 
 <body>
 <div class="overlay">
+
+    <!-- TOP BAR -->
     <div class="top-nav">
         <div class="brand">
             <img src="<%=request.getContextPath()%>/images/Logo.png" alt="Logo">
             <div class="clinic-title">Yes Dental Clinic</div>
         </div>
 
-        <div class="user-chip">
-            <i class="fa-solid fa-user"></i>
-            <span><%= session.getAttribute("staffName") != null ? session.getAttribute("staffName") : "Staff" %></span>
+        <div class="top-right">
+            <div class="user-chip">
+                <i class="fa-solid fa-user"></i>
+                <span><%= staffNameSess %></span>
+            </div>
+
+            <form action="<%=request.getContextPath()%>/LogoutServlet" method="post" style="margin:0;">
+                <button type="submit" class="logout-btn">
+                    <i class="fa-solid fa-right-from-bracket"></i> Logout
+                </button>
+            </form>
         </div>
     </div>
 
+    <!-- LAYOUT -->
     <div class="layout-wrap">
         <div class="layout">
 
+            <!-- SIDEBAR -->
             <div class="sidebar">
                 <h6>Staff Dashboard</h6>
-                <a class="side-link active" href="<%=request.getContextPath()%>/StaffServlet?action=list">Staff</a>
-                <a class="side-link" href="<%=request.getContextPath()%>/AppointmentServlet?action=list">Appointments</a>
-                <a class="side-link" href="<%=request.getContextPath()%>/BillingServlet?action=list">Billing</a>
-                <a class="side-link" href="<%=request.getContextPath()%>/PatientServlet?action=list">Patients</a>
-                <a class="side-link" href="<%=request.getContextPath()%>/TreatmentServlet?action=list">Treatments</a>
+
+                <a class="side-link" href="<%=request.getContextPath()%>/staff/staffDashboard.jsp">
+                    <i class="fa-solid fa-chart-line"></i> Dashboard
+                </a>
+
+                <a class="side-link active" href="<%=request.getContextPath()%>/StaffServlet?action=list">
+                    <i class="fa-solid fa-user-doctor"></i> Staff
+                </a>
+
+                <a class="side-link" href="<%=request.getContextPath()%>/AppointmentServlet?action=list">
+                    <i class="fa-solid fa-calendar-check"></i> Appointments
+                </a>
+
+                <a class="side-link" href="<%=request.getContextPath()%>/BillingServlet?action=list">
+                    <i class="fa-solid fa-file-invoice-dollar"></i> Billing
+                </a>
+
+                <a class="side-link" href="<%=request.getContextPath()%>/PatientServlet?action=list">
+                    <i class="fa-solid fa-hospital-user"></i> Patients
+                </a>
+
+                <a class="side-link" href="<%=request.getContextPath()%>/TreatmentServlet?action=list">
+                    <i class="fa-solid fa-tooth"></i> Treatments
+                </a>
             </div>
 
+            <!-- CONTENT -->
             <div class="card-panel">
+
                 <div class="panel-header">
                     <div>
-                        <h4>Staff Details</h4>
-                        <div class="mt-2"><span class="role-pill"><%= role %></span></div>
+                        <h4 class="panel-title">
+                            <i class="fa-solid fa-id-badge"></i>
+                            Staff Details
+                        </h4>
+                        <p class="panel-sub">
+                            <span class="role-pill"><%= role %></span>
+                        </p>
                     </div>
                 </div>
 
-                <div class="details-wrap">
-                    <div class="info-grid">
-                        <div class="info-card">
-                            <div class="label">Staff ID</div>
-                            <div class="value"><%= id %></div>
+                <div class="content-scroll">
+                    <div class="info-card">
+                        <div class="info-grid">
+                            <div class="field">
+                                <div class="label">Staff ID</div>
+                                <div class="value"><%= id %></div>
+                            </div>
+
+                            <div class="field">
+                                <div class="label">Name</div>
+                                <div class="value"><%= name %></div>
+                            </div>
+
+                            <div class="field">
+                                <div class="label">Email</div>
+                                <div class="value"><%= email %></div>
+                            </div>
+
+                            <div class="field">
+                                <div class="label">Phone</div>
+                                <div class="value"><%= phone %></div>
+                            </div>
                         </div>
 
-                        <div class="info-card">
-                            <div class="label">Name</div>
-                            <div class="value"><%= name %></div>
-                        </div>
+                        <div class="btn-row">
+                            <a class="btn btn-secondary btn-back" href="<%=request.getContextPath()%>/StaffServlet?action=list">
+                                <i class="fa-solid fa-arrow-left"></i> Back
+                            </a>
 
-                        <div class="info-card">
-                            <div class="label">Email</div>
-                            <div class="value"><%= email %></div>
+                            <a class="btn-edit" href="<%=request.getContextPath()%>/StaffServlet?action=edit&staff_id=<%= id %>">
+                                <i class="fa-solid fa-pen"></i> Edit Staff
+                            </a>
                         </div>
-
-                        <div class="info-card">
-                            <div class="label">Phone</div>
-                            <div class="value"><%= phone %></div>
-                        </div>
-                    </div>
-
-                    <div class="btn-row">
-                        <a class="btn btn-secondary btn-back" href="<%=request.getContextPath()%>/StaffServlet?action=list">Back</a>
-                        <a class="btn-edit" href="<%=request.getContextPath()%>/StaffServlet?action=edit&staff_id=<%= id %>">
-                            <i class="fa-solid fa-pen"></i> Edit Staff
-                        </a>
                     </div>
                 </div>
 

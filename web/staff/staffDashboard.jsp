@@ -352,7 +352,7 @@
                     <i class="fa-solid fa-user-doctor"></i> Staff
                 </a>
 
-                <a class="side-link" href="/YesDentalSupportSystem_ayuni/AppointmentServlet?action=list">
+                <a class="side-link" href="/YesDentalSupportSystem/AppointmentServlet?action=list">
                     <i class="fa-solid fa-calendar-check"></i> Appointments
                 </a>
 

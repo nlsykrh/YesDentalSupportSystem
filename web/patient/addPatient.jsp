@@ -350,7 +350,7 @@
 
             <div class="sidebar">
                 <h6>Staff Dashboard</h6>
-                
+
                 <a class="side-link"href="/YesDentalSupportSystem/patient/patientDashboard.jsp">
                     <i class="fa-solid fa-chart-line"></i> Dashboard
                 </a>
@@ -402,7 +402,7 @@
                         <div class="ic-bar">
                             <div class="ic-input-wrap">
                                 <label class="form-label">Search / Check IC Number</label>
-                                
+
                                 <!-- NEW: Input and button in same row -->
                                 <div class="ic-input-group">
                                     <input type="text"
@@ -414,12 +414,12 @@
                                            inputmode="numeric"
                                            autocomplete="off"
                                            required>
-                                    
+
                                     <button type="button" class="btn btn-check-ic" id="btnCheckIc">
                                         <i class="fa-solid fa-magnifying-glass"></i> Check
                                     </button>
                                 </div>
-                                
+
                                 <div class="help-note">Enter 12-digit IC, then click "Check".</div>
 
                                 <div id="icMsg" class="ic-msg"></div>
@@ -526,8 +526,21 @@
 <script>
 (() => {
     const popup = "<%= popup != null ? popup : "" %>";
+
+    // ✅ POPUP + REDIRECT WHEN CLOSE (NO TIMER)
     if (popup === "added") {
-        new bootstrap.Modal(document.getElementById("addedModal")).show();
+        const modalEl = document.getElementById("addedModal");
+
+        if (modalEl) {
+            const modal = new bootstrap.Modal(modalEl);
+            modal.show();
+
+            modalEl.addEventListener("hidden.bs.modal", function () {
+                window.location.href = "<%=request.getContextPath()%>/PatientServlet?action=list";
+            });
+        } else {
+            window.location.href = "<%=request.getContextPath()%>/PatientServlet?action=list";
+        }
     }
 
     const icInput = document.getElementById("icSearch");

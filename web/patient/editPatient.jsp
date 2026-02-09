@@ -75,9 +75,11 @@
         }
 
         .top-right{
-            display:flex;
-            align-items:center;
-            gap:12px;
+        display:flex;
+        align-items:center;
+        gap:12px;
+        justify-content:flex-end;
+        flex-wrap:wrap; /* ✅ prevent disappearing on smaller width */
         }
 
         .user-chip{
@@ -91,6 +93,7 @@
             color:#2f3a34;
         }
 
+        /* ✅ LOGOUT BUTTON like your design */
         .logout-btn{
             display:inline-flex;
             align-items:center;
@@ -98,18 +101,21 @@
             padding:6px 16px;
             border-radius:999px;
             background:#c96a6a;
-            color:white;
+            color:#fff;
             font-size:13px;
             font-weight:600;
             text-decoration:none;
             box-shadow:0 6px 14px rgba(0,0,0,0.18);
-            transition:all 0.2s ease;
+            transition:all .2s ease;
+            border:none;
+            cursor:pointer;
         }
 
         .logout-btn:hover{
             background:#b95a5a;
             transform:translateY(-1px);
         }
+
 
         /* LAYOUT */
         .layout-wrap{
@@ -208,15 +214,14 @@
             white-space:nowrap;
         }
 
-        /* FORM LAYOUT (IMPORTANT) */
+        /* FORM LAYOUT */
         form.flex-form{
             display:flex;
             flex-direction:column;
             height:100%;
-            min-height:0; /* ✅ important */
+            min-height:0;
         }
 
-        /* SCROLL AREA */
         .form-wrap{
             flex:1;
             min-height:0;
@@ -227,7 +232,6 @@
             padding:18px;
         }
 
-        /* FOOTER ALWAYS VISIBLE */
         .footer-actions{
             flex-shrink:0;
             display:flex;
@@ -284,6 +288,7 @@
             .layout-wrap{height:auto; padding:20px;}
             .card-panel{height:auto;}
             .form-wrap{min-height:auto; overflow:visible;}
+            .top-right{ flex-wrap:wrap; justify-content:flex-end; }
         }
     </style>
 </head>
@@ -291,31 +296,35 @@
 <body>
 <div class="overlay">
 
-    <!-- TOP NAV -->
-    <div class="top-nav">
-        <div class="brand">
-            <img src="<%=request.getContextPath()%>/images/Logo.png" alt="Logo">
-            <div class="clinic-title">Yes Dental Clinic</div>
+   <div class="top-nav">
+    <div class="brand">
+        <img src="<%=request.getContextPath()%>/images/Logo.png" alt="Logo">
+        <div class="clinic-title">Yes Dental Clinic</div>
+    </div>
+
+    <!-- ✅ RIGHT SIDE: chip + logout -->
+    <div class="top-right">
+        <div class="user-chip">
+            <i class="fa-solid fa-user"></i>
+            <span><%= staffName %></span>
         </div>
 
-        <div class="top-right">
-            <div class="user-chip">
-                <i class="fa-solid fa-user"></i>
-                <span><%= staffName %></span>
-            </div>
-            <a href="<%=request.getContextPath()%>/LogoutServlet" class="logout-btn">
+        <form action="<%=request.getContextPath()%>/LogoutServlet" method="post" style="margin:0;">
+            <button type="submit" class="logout-btn">
                 <i class="fa-solid fa-right-from-bracket"></i> Logout
-            </a>
-        </div>
+            </button>
+        </form>
     </div>
+</div>
+
 
     <div class="layout-wrap">
         <div class="layout">
 
             <div class="sidebar">
                 <h6>Staff Dashboard</h6>
-                
-                <a class="side-link"href="/YesDentalSupportSystem/patient/patientDashboard.jsp">
+
+                <a class="side-link" href="/YesDentalSupportSystem/patient/patientDashboard.jsp">
                     <i class="fa-solid fa-chart-line"></i> Dashboard
                 </a>
 
@@ -447,18 +456,14 @@
 
                     </div>
 
-                    <!-- FOOTER ALWAYS VISIBLE -->
                     <div class="footer-actions">
                         <a class="btn-outline-pill" href="<%=request.getContextPath()%>/PatientServlet?action=list">
                             Back to Patients
                         </a>
 
-                        <div style="display:flex; gap:10px;">
-
-                            <button type="submit" class="btn-gold">
-                                <i class="fa-solid fa-floppy-disk"></i> Update Patient
-                            </button>
-                        </div>
+                        <button type="submit" class="btn-gold">
+                            <i class="fa-solid fa-floppy-disk"></i> Update Patient
+                        </button>
                     </div>
                 </form>
 
@@ -502,13 +507,17 @@
 
 <script>
 (() => {
-    // Show popup if redirected with ?popup=updated
     const popup = "<%= popup != null ? popup : "" %>";
     if (popup === "updated") {
-        new bootstrap.Modal(document.getElementById("updatedModal")).show();
+        const modalEl = document.getElementById("updatedModal");
+        const modal = new bootstrap.Modal(modalEl);
+        modal.show();
+
+        modalEl.addEventListener("hidden.bs.modal", function () {
+            window.location.href = "<%=request.getContextPath()%>/PatientServlet?action=list";
+        });
     }
 
-    // Numbers only for phone inputs
     function numbersOnly(id){
         const el = document.getElementById(id);
         if(!el) return;

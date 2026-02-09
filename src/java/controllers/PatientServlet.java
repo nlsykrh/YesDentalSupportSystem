@@ -75,8 +75,9 @@ public class PatientServlet extends HttpServlet {
             deletePatient(request, response);
             return;
         }
+        
 
-        response.sendRedirect(request.getContextPath() + "/PatientServlet?action=list");
+        response.sendRedirect(request.getContextPath() + "/patient/addPatient.jsp?popup=added");
     }
 
     private void checkIc(HttpServletRequest request, HttpServletResponse response)

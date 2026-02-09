@@ -334,7 +334,7 @@
             <div class="sidebar">
                 <h6>Staff Dashboard</h6>
                 
-                <a class="side-link"href="/YesDentalSupportSystem/patient/patientDashboard.jsp">
+                <a class="side-link"href="/YesDentalSupportSystem/staff/staffDashboard.jsp">
                     <i class="fa-solid fa-chart-line"></i> Dashboard
                 </a>
 
